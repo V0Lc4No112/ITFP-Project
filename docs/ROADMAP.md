@@ -31,7 +31,7 @@ Consequence: **A5 decisions are the expensive ones.** The topic, the record fiel
 
 ## 2. Week 0: decide before writing code
 
-1. **Topic: DECIDED (2026-10-12): Equipment rental shop** (bikes, skis, tents). See [a5-tasks.md](a5-tasks.md). Original selection criteria: It must have: records with 5+ fields, a numeric calculation with two possible rules, a lifecycle with 2+ states (e.g. Pending → Confirmed), a lookup by id/code, and a category to group by. The course's own example fits all of this: *delivery requests → quotes → confirmed bookings*. Others: task planner, budget tracker, course enrolment.
+1. **Topic: DECIDED (2026-10-12): Equipment rental shop** (bikes, skis, tents). See [contracts.md](contracts.md). Original selection criteria: It must have: records with 5+ fields, a numeric calculation with two possible rules, a lifecycle with 2+ states (e.g. Pending → Confirmed), a lookup by id/code, and a category to group by. The course's own example fits all of this: *delivery requests → quotes → confirmed bookings*. Others: task planner, budget tracker, course enrolment.
 2. **Fix tooling:** one .NET SDK version pinned in `global.json`, xUnit for tests, JSON for data (`System.Text.Json`), one OS/arch declared for the native build (A8).
 3. **Create the repo** (one person creates it, invites the other three, protects `main`).
 4. **Agree roles** (section 4) and write them into README.md now, because each README must list every member's logic, tests and docs.
@@ -98,7 +98,7 @@ Each assignment runs in the same 4 steps: **(1) contract day** — agree the typ
 | C | Stage 2 = the higher-order function taking a `Func` policy; two policies chosen outside the pipeline | Two policies differ on the same input; delegate really invoked |
 | D | Repo + solution setup, composition in one visible workflow, `Program.cs`, dataset of 5+ records with expected results written first, README | Normal workflow; empty dataset |
 
-Contract day output: record types, the three stage signatures, the policy delegate type. Exact per-member instructions: [a5-tasks.md](a5-tasks.md).
+Contract day output: record types, the three stage signatures, the policy delegate type. Shared contract: [contracts.md](contracts.md). Per-member task files: [a5/](a5/README.md).
 
 ### Assignment 6: Temporal coupling (min. 8 tests)
 

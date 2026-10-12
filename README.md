@@ -4,7 +4,7 @@ Introduction to Functional Programming, 2026/2027. A group project built up acro
 
 The shop rents bikes, skis and camping gear. The program reads rental requests from a CSV file, keeps the eligible ones, prices them with a selectable pricing policy, and prints the quotes.
 
-> **Status:** Assignment 5 skeleton. The types and stage signatures are in place; the logic is being implemented. See [docs/a5-tasks.md](docs/a5-tasks.md).
+> **Status:** Assignment 5 skeleton. The types and stage signatures are in place; the logic is being implemented. Start with [docs/README.md](docs/README.md): the [shared contracts](docs/contracts.md) and your [A5 task file](docs/a5/README.md).
 
 ## Team
 
@@ -49,4 +49,4 @@ docs/                roadmap, per-assignment notes, reports, contributions
 - When an assignment is complete, tag it (`a5-submission`) and build the Moodle ZIP from the tag:
   `git archive --format=zip -o A5.zip a5-submission`
 
-Full plan: [docs/ROADMAP.md](docs/ROADMAP.md).
+Full plan: [docs/ROADMAP.md](docs/ROADMAP.md). Shared contracts: [docs/contracts.md](docs/contracts.md).
