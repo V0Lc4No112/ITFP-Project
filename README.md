@@ -4,8 +4,6 @@ Introduction to Functional Programming, 2026/2027. A group project built up acro
 
 The shop rents bikes, skis and camping gear. The program reads rental requests from a CSV file, keeps the eligible ones, prices them with a selectable pricing policy, and prints the quotes.
 
-> **Status:** Assignment 5 in progress. The parser (A), Stages 1 and 3 (B), Stage 2 and the policies (C) are merged, and Member D's composition, `Program.cs`, sample data and workflow tests run against them: all 16 tests pass. Start with [docs/README.md](docs/README.md): the [shared contracts](docs/contracts.md) and your [A5 task file](docs/a5/README.md).
-
 ## Intended users
 
 Counter staff at a small rental shop who need a quick, repeatable quote for a batch of requests, and the team members who extend the pipeline in later assignments.
