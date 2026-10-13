@@ -5,17 +5,18 @@ namespace Rental.Domain.Pipeline;
 
 public static class Stages
 {
-    /// <summary>
-    /// Stage 1 (Member B): keeps requests with Days &lt;= maxDays and trims Customer.
-    /// Returns a new array; never modifies the caller's list.
-    /// </summary>
     public static ImmutableArray<RentalRequest> SelectEligible(IReadOnlyList<RentalRequest> requests, int maxDays) =>
-        throw new NotImplementedException();
+        requests
+            .Where(r => r.Days <= maxDays)
+            .Select(r => r with { Customer = r.Customer.Trim() })
+            .ToImmutableArray();
 
-    /// <summary>
-    /// Stage 3 (Member B): orders by TotalCents descending, then Id ascending,
-    /// and calculates the grand total and count.
-    /// </summary>
     public static QuoteSummary BuildSummary(ImmutableArray<PricedRental> priced) =>
-        throw new NotImplementedException();
+        new(
+            priced
+                .OrderByDescending(p => p.TotalCents)
+                .ThenBy(p => p.Request.Id, StringComparer.Ordinal)
+                .ToImmutableArray(),
+            priced.Sum(p => p.TotalCents),
+            priced.Length);
 }
