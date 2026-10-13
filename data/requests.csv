@@ -1,0 +1,7 @@
+Id,Customer,ItemCode,Category,DailyRateCents,Quantity,Days,IsMember
+R1,Anna,BIKE-01,Bike,1500,2,5,true
+R2,Ben,SKI-02,Ski,4000,1,3,false
+R3,Cara,TENT-01,Camping,2500,1,14,false
+R4,Dan,BIKE-01,Bike,1500,1,15,true
+R5,Eve,TENT-01,Camping,2500,2,1,false
+R6,Finn,BIKE-01,Bike,1500,1,8,false
