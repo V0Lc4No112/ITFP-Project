@@ -14,10 +14,10 @@ Counter staff at a small rental shop who need a quick, repeatable quote for a ba
 
 | Member | Name / group | Area | A5 responsibility |
 |---|---|---|---|
-| A | _TBD_ | Boundary & I/O | CSV parsing and validation |
-| B | _TBD_ | Functional core | Stage 1 and Stage 3 |
-| C | _TBD_ | Rules & states | Stage 2 (higher-order function) and pricing policies |
-| D | _TBD_ | Integration & docs | Composition, `Program.cs`, dataset, README |
+| A | Alimzhan Kabylkhanov, group _TBD_ | Boundary & I/O | CSV parsing and validation |
+| B | Daniyar Azizayev, group _TBD_ | Functional core | Stage 1 and Stage 3 |
+| C | Mukhamejan Abdikerim, group _TBD_ | Rules & states | Stage 2 (higher-order function) and pricing policies |
+| D | Mereikhan Sholanbayev, group _TBD_ | Integration & docs | Composition, `Program.cs`, dataset, README |
 
 ## Requirements
 
