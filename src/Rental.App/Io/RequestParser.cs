@@ -65,37 +65,59 @@ public static class RequestParser
             if (string.IsNullOrWhiteSpace(itemCode))
                 errors.Add($"Row {rowNumber}: ItemCode must not be blank");
 
-            bool categoryValid = Enum.TryParse<Category>(
-                fields[3].Trim(),
-                ignoreCase: true,
-                out Category category
-            ) && Enum.IsDefined(category);
+            // Validate category: only Bike, Ski, Camping names are allowed.
+            string categoryText = fields[3].Trim();
+
+            bool categoryValid =
+                Enum.TryParse<Category>(
+                    categoryText,
+                    ignoreCase: true,
+                    out Category category
+                )
+                && Enum.IsDefined(category)
+                && !int.TryParse(categoryText, out _);
 
             if (!categoryValid)
-                errors.Add($"Row {rowNumber}: Category is invalid (was {fields[3]})");
+            {
+                errors.Add(
+                    $"Row {rowNumber}: Category is invalid (was {fields[3]})"
+                );
+            }
 
-            bool rateValid = long.TryParse(fields[4].Trim(), out long dailyRate);
+            bool rateValid = long.TryParse(
+                fields[4].Trim(),
+                out long dailyRate
+            );
 
             if (!rateValid)
                 errors.Add($"Row {rowNumber}: DailyRateCents must be a number (was {fields[4]})");
             else if (dailyRate <= 0)
                 errors.Add($"Row {rowNumber}: DailyRateCents must be > 0 (was {dailyRate})");
 
-            bool quantityValid = int.TryParse(fields[5].Trim(), out int quantity);
+            bool quantityValid = int.TryParse(
+                fields[5].Trim(),
+                out int quantity
+            );
 
             if (!quantityValid)
                 errors.Add($"Row {rowNumber}: Quantity must be an integer (was {fields[5]})");
             else if (quantity < 1)
                 errors.Add($"Row {rowNumber}: Quantity must be >= 1 (was {quantity})");
 
-            bool daysValid = int.TryParse(fields[6].Trim(), out int days);
+            bool daysValid = int.TryParse(
+                fields[6].Trim(),
+                out int days
+            );
 
             if (!daysValid)
                 errors.Add($"Row {rowNumber}: Days must be an integer (was {fields[6]})");
             else if (days < 1)
                 errors.Add($"Row {rowNumber}: Days must be >= 1 (was {days})");
 
-            bool memberValid = bool.TryParse(fields[7].Trim(), out bool isMember);
+            bool memberValid = bool.TryParse(
+                fields[7].Trim(),
+                out bool isMember
+            );
 
             if (!memberValid)
                 errors.Add($"Row {rowNumber}: IsMember must be true or false (was {fields[7]})");
@@ -115,6 +137,9 @@ public static class RequestParser
             }
         }
 
-        return new ParseOutcome(valid.ToImmutable(), errors.ToImmutable());
+        return new ParseOutcome(
+            valid.ToImmutable(),
+            errors.ToImmutable()
+        );
     }
 }
