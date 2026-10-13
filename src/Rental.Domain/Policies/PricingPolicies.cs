@@ -1,22 +1,32 @@
+using System;
 using Rental.Domain.Models;
 
 namespace Rental.Domain.Policies;
 
-/// <summary>
-/// Member C: the two pricing policies. Selected in Program and passed as an
-/// argument; there is no mutable "current policy" field.
-/// </summary>
 public static class PricingPolicies
 {
-    /// <summary>DailyRateCents × Quantity × Days.</summary>
     public static readonly Func<RentalRequest, long> Standard =
-        _ => throw new NotImplementedException();
+        static request =>
+            request.DailyRateCents * request.Quantity * request.Days;
 
-    /// <summary>Standard, then 15% off (rounded down) when Days &gt;= 5.</summary>
     public static readonly Func<RentalRequest, long> LongRentalDiscount =
-        _ => throw new NotImplementedException();
+        static request =>
+        {
+            long basePrice = Standard(request);
 
-    /// <summary>"standard" or "discount"; null for an unknown name.</summary>
-    public static Func<RentalRequest, long>? FromName(string name) =>
-        throw new NotImplementedException();
+            return request.Days >= 5
+                ? basePrice * 85 / 100
+                : basePrice;
+        };
+
+    public static Func<RentalRequest, long>? FromName(string name)
+    {
+        if (string.Equals(name, "standard", StringComparison.OrdinalIgnoreCase))
+            return Standard;
+
+        if (string.Equals(name, "discount", StringComparison.OrdinalIgnoreCase))
+            return LongRentalDiscount;
+
+        return null;
+    }
 }
