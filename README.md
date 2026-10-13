@@ -4,7 +4,7 @@ Introduction to Functional Programming, 2026/2027. A group project built up acro
 
 The shop rents bikes, skis and camping gear. The program reads rental requests from a CSV file, keeps the eligible ones, prices them with a selectable pricing policy, and prints the quotes.
 
-> **Status:** Assignment 5 in progress. Member D's composition, `Program.cs`, sample data and workflow tests are in place. Stages 1 to 3, the parser and the policies are being implemented by A, B and C. Start with [docs/README.md](docs/README.md): the [shared contracts](docs/contracts.md) and your [A5 task file](docs/a5/README.md).
+> **Status:** Assignment 5 in progress. The parser (A), Stages 1 and 3 (B), Stage 2 and the policies (C) are merged, and Member D's composition, `Program.cs`, sample data and workflow tests run against them: all 16 tests pass. Start with [docs/README.md](docs/README.md): the [shared contracts](docs/contracts.md) and your [A5 task file](docs/a5/README.md).
 
 ## Intended users
 
@@ -121,22 +121,22 @@ _Member C: Stage 2, the higher-order function and the policies go here._
 
 | Test | File | Expected | Latest `dotnet test` |
 |---|---|---|---|
-| `NormalWorkflow_Standard_MatchesDocumentedResult` | `WorkflowTests.cs` | Order R3, R1, R2, R6, R5; total 79000; count 5 | _not yet run: needs stages 1–3 and the policies_ |
-| `NormalWorkflow_Discount_MatchesDocumentedResult` | `WorkflowTests.cs` | Order R3, R1, R2, R6, R5; total 69700; count 5 | _not yet run_ |
-| `EmptyDataset_ReturnsEmptySummary` | `WorkflowTests.cs` | Count 0, total 0, no exception | _not yet run_ |
-| `Parse_Null_ReturnsMissingInputError` | `ParserTests.cs` | One "missing" error, no valid rows | _Member A_ |
-| `Parse_HeaderOnly_ReturnsValidEmptyDataset` | `ParserTests.cs` | No rows and no errors | _Member A_ |
-| `Parse_InvalidFields_RejectsEachWithMessage` | `ParserTests.cs` | Each bad field named; none valid | _Member A_ |
-| `Parse_IsMemberFalse_IsAcceptedAsValue` | `ParserTests.cs` | `IsMember == false` | _Member A_ |
-| `SelectEligible_ExactlyMaxDays_IsIncluded_OneMore_IsExcluded` | `StageTests.cs` | 14 kept, 15 dropped | _Member B_ |
-| `SelectEligible_DoesNotModifyCallerList` | `StageTests.cs` | Caller's list unchanged | _Member B_ |
-| `SelectEligible_TrimsCustomer` | `StageTests.cs` | `"  Anna "` becomes `"Anna"` | _Member B_ |
-| `BuildSummary_TiedTotals_OrderedById` | `StageTests.cs` | R2 before R6 | _Member B_ |
-| `TwoPolicies_SameInput_DifferForLongRental` | `PolicyTests.cs` | R1: 15000 vs 12750 | _Member C_ |
-| `TwoPolicies_ShortRental_Equal` | `PolicyTests.cs` | R2: 12000 under both | _Member C_ |
-| `PriceAll_InvokesPolicyOncePerRequest` | `PolicyTests.cs` | Policy called exactly N times | _Member C_ |
-| `Discount_ExactlyFiveDays_Applies` | `PolicyTests.cs` | 5 days discounted, 4 days not | _Member C_ |
-| `FromName_Unknown_ReturnsNull` | `PolicyTests.cs` | `"vip"` gives `null` | _Member C_ |
+| `NormalWorkflow_Standard_MatchesDocumentedResult` | `WorkflowTests.cs` | Order R3, R1, R2, R6, R5; total 79000; count 5 | Passed (2026-10-13) |
+| `NormalWorkflow_Discount_MatchesDocumentedResult` | `WorkflowTests.cs` | Order R3, R1, R2, R6, R5; total 69700; count 5 | Passed (2026-10-13) |
+| `EmptyDataset_ReturnsEmptySummary` | `WorkflowTests.cs` | Count 0, total 0, no exception | Passed (2026-10-13) |
+| `Parse_Null_ReturnsMissingInputError` | `ParserTests.cs` | One "missing" error, no valid rows | Passed (2026-10-13) |
+| `Parse_HeaderOnly_ReturnsValidEmptyDataset` | `ParserTests.cs` | No rows and no errors | Passed (2026-10-13) |
+| `Parse_InvalidFields_RejectsEachWithMessage` | `ParserTests.cs` | Each bad field named; none valid | Passed (2026-10-13) |
+| `Parse_IsMemberFalse_IsAcceptedAsValue` | `ParserTests.cs` | `IsMember == false` | Passed (2026-10-13) |
+| `SelectEligible_ExactlyMaxDays_IsIncluded_OneMore_IsExcluded` | `StageTests.cs` | 14 kept, 15 dropped | Passed (2026-10-13) |
+| `SelectEligible_DoesNotModifyCallerList` | `StageTests.cs` | Caller's list unchanged | Passed (2026-10-13) |
+| `SelectEligible_TrimsCustomer` | `StageTests.cs` | `"  Anna "` becomes `"Anna"` | Passed (2026-10-13) |
+| `BuildSummary_TiedTotals_OrderedById` | `StageTests.cs` | R2 before R6 | Passed (2026-10-13) |
+| `TwoPolicies_SameInput_DifferForLongRental` | `PolicyTests.cs` | R1: 15000 vs 12750 | Passed (2026-10-13) |
+| `TwoPolicies_ShortRental_Equal` | `PolicyTests.cs` | R2: 12000 under both | Passed (2026-10-13) |
+| `PriceAll_InvokesPolicyOncePerRequest` | `PolicyTests.cs` | Policy called exactly N times | Passed (2026-10-13) |
+| `Discount_ExactlyFiveDays_Applies` | `PolicyTests.cs` | 5 days discounted, 4 days not | Passed (2026-10-13) |
+| `FromName_Unknown_ReturnsNull` | `PolicyTests.cs` | `"vip"` gives `null` | Passed (2026-10-13) |
 
 ## Members
 
