@@ -61,7 +61,36 @@ Usage: `dotnet run --project src/Rental.App -- <csv path> <standard|discount>`. 
 | `Days` | int | Rental length in days |
 | `IsMember` | bool | Shop member flag (`true` / `false`) |
 
-_Member A: validation rules and the missing / empty / invalid distinction go here._
+### Validation (Member A)
+
+`RequestParser.Parse(IReadOnlyList<string>? lines)` ([src/Rental.App/Io/RequestParser.cs](src/Rental.App/Io/RequestParser.cs)) returns `ParseOutcome(Valid, Errors)`. It never throws and never fixes a value: each row is either fully valid or rejected with a message for every bad field. Rows are numbered with the header as row 1, so the first data row is row 2.
+
+| Input | Result |
+|---|---|
+| `null` (missing) | Error `Input is missing`, no rows |
+| No lines at all | Error `Row 1: Header is missing` |
+| First line is not `RequestParser.Header` | Error `Row 1: Invalid header`, no rows parsed |
+| Header only (empty) | No rows and no errors: a **valid empty dataset** |
+| Rows with bad fields (invalid) | Each bad field reported, that row skipped; the other rows are still checked |
+
+Checks per row (fields are trimmed first):
+
+- Exactly 8 columns.
+- `Id`, `Customer` and `ItemCode` are not blank.
+- `Category` is `Bike`, `Ski` or `Camping` (case-insensitive).
+- `DailyRateCents` is a number and `> 0`.
+- `Quantity` and `Days` are integers and `>= 1`.
+- `IsMember` is `true` or `false`.
+
+Example, `data/requests-invalid.csv` prints:
+
+```
+Input has 4 error(s); the pipeline was not run:
+  Row 2: Days must be >= 1 (was -2)
+  Row 3: Quantity must be an integer (was two)
+  Row 4: Customer must not be blank
+  Row 5: Category is invalid (was Boat)
+```
 
 ## Pipeline
 
@@ -69,9 +98,48 @@ _Member A: validation rules and the missing / empty / invalid distinction go her
 
 The composition is in `RentalWorkflow.Run` ([src/Rental.Domain/Pipeline/RentalWorkflow.cs](src/Rental.Domain/Pipeline/RentalWorkflow.cs)): each stage's output is the next stage's input, in one visible place. `Program` reads and parses the file, picks the policy from the command line, calls `Run`, and prints only after `Run` returns, so the core never touches the console or the file system and can be tested with plain records.
 
-_Member B: Stage 1 and Stage 3 (input type, output type, rule, worked example) go here._
+### Stage 1: `SelectEligible` (Member B)
 
-_Member C: Stage 2, the higher-order function and the policies go here._
+[src/Rental.Domain/Pipeline/Stages.cs](src/Rental.Domain/Pipeline/Stages.cs)
+
+| | |
+|---|---|
+| Input | `IReadOnlyList<RentalRequest> requests`, `int maxDays` |
+| Output | `ImmutableArray<RentalRequest>` |
+| Rule | Keep requests with `Days <= maxDays`; trim `Customer` with `with`, which makes a new record, so the caller's list is never changed |
+
+Worked example with `maxDays = 14`: R3 (14 days) is kept and R4 (15 days) is dropped, so R1, R2, R3, R5, R6 go on to Stage 2.
+
+### Stage 2: `PriceAll` and the pricing policies (Member C)
+
+[src/Rental.Domain/Pipeline/Pricing.cs](src/Rental.Domain/Pipeline/Pricing.cs), [src/Rental.Domain/Policies/PricingPolicies.cs](src/Rental.Domain/Policies/PricingPolicies.cs)
+
+| | |
+|---|---|
+| Input | `ImmutableArray<RentalRequest> eligible`, `Func<RentalRequest, long> policy` |
+| Output | `ImmutableArray<PricedRental>`, in the same order as the input |
+| Rule | Call `policy` exactly once per request and pair the request with its total |
+
+`PriceAll` is the **higher-order function**: it takes the pricing rule as a parameter and does not know which policy it was given. The two policies are `static readonly Func<RentalRequest, long>` values:
+
+- `Standard`: `DailyRateCents × Quantity × Days`.
+- `LongRentalDiscount`: Standard, then `base * 85 / 100` when `Days >= 5` (integer division rounds down to whole cents).
+
+`PricingPolicies.FromName` maps `standard` and `discount` (case-insensitive) to these functions and returns `null` for anything else, which `Program` reports as `Unknown policy`.
+
+Worked example: R1 (1500 × 2 × 5) is 15000 under Standard. It has 5 days, so the discount applies: 15000 × 85 / 100 = 12750. R2 has 3 days, so it is 12000 under both policies.
+
+### Stage 3: `BuildSummary` (Member B)
+
+[src/Rental.Domain/Pipeline/Stages.cs](src/Rental.Domain/Pipeline/Stages.cs)
+
+| | |
+|---|---|
+| Input | `ImmutableArray<PricedRental> priced` |
+| Output | `QuoteSummary(Quotes, GrandTotalCents, Count)` |
+| Rule | Order by `TotalCents` descending, then `Id` ascending (ordinal); grand total is the sum of `TotalCents`; count is the number of quotes |
+
+Worked example (Standard): R3 35000, R1 15000, R2 12000, R6 12000, R5 5000. R2 and R6 tie, so `Id` puts R2 first. Grand total 79000, count 5.
 
 ## Business rules
 
