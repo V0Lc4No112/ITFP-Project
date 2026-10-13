@@ -221,11 +221,3 @@ src/Rental.App/      console app = the boundary: arguments, file reading, parsin
 tests/Rental.Tests/  xUnit tests (TestData/ for controlled sample files)
 data/                sample input used by the demos
 ```
-
-## Git workflow
-
-- Branch per feature, prefixed by assignment: `a5/validation-member-a`.
-- Commit messages start with the assignment: `[A5] Add stage 2 pricing`.
-- Open a pull request into `main`; another member reviews it and runs `dotnet test` before merging.
-- When an assignment is complete, tag it (`a5-submission`) and build the Moodle ZIP from the tag:
-  `git archive --format=zip -o A5.zip a5-submission`
