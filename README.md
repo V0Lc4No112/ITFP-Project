@@ -220,8 +220,6 @@ src/Rental.Domain/   pure core: models, pipeline stages, policies (no Console, n
 src/Rental.App/      console app = the boundary: arguments, file reading, parsing, printing
 tests/Rental.Tests/  xUnit tests (TestData/ for controlled sample files)
 data/                sample input used by the demos
-native/              C library for Assignment 8
-docs/                roadmap, per-assignment notes, reports, contributions
 ```
 
 ## Git workflow
@@ -231,5 +229,3 @@ docs/                roadmap, per-assignment notes, reports, contributions
 - Open a pull request into `main`; another member reviews it and runs `dotnet test` before merging.
 - When an assignment is complete, tag it (`a5-submission`) and build the Moodle ZIP from the tag:
   `git archive --format=zip -o A5.zip a5-submission`
-
-Full plan: [docs/ROADMAP.md](docs/ROADMAP.md). Shared contracts: [docs/contracts.md](docs/contracts.md).
