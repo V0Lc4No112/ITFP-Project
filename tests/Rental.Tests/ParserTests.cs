@@ -64,4 +64,25 @@ public class ParserTests
         Assert.Single(result.Valid);
         Assert.False(result.Valid[0].IsMember);
     }
+    
+    [Theory]
+    [InlineData("0")]
+    [InlineData("1")]
+    [InlineData("2")]
+    [InlineData("7")]
+    public void Parse_NumericCategory_IsRejected(string category)
+    {
+        var lines = new[]
+        {
+         RequestParser.Header,
+         $"R1,Anna,BIKE-01,{category},1500,2,5,false"
+        };
+
+    var result = RequestParser.Parse(lines);
+
+    Assert.Empty(result.Valid);
+    Assert.Contains(result.Errors,
+        e => e.Contains("Category"));
+    }
+
 }
