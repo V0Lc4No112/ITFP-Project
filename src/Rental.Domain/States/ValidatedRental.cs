@@ -1,4 +1,5 @@
 using Rental.Domain.Models;
+using System.Collections.Immutable;
 
 namespace Rental.Domain.States;
 
@@ -42,7 +43,8 @@ public sealed class ValidatedRental
                 $"Days must be >= 1 (was {candidate.Days})");
 
         if (reasons.Count > 0)
-            return new Validation<ValidatedRental>.Invalid(reasons);
+            return new Validation<ValidatedRental>.Invalid(
+                reasons.ToImmutableArray());
 
         return new Validation<ValidatedRental>.Valid(
             new ValidatedRental(candidate));
