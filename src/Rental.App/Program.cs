@@ -38,7 +38,11 @@ if (policy is null)
     return 1;
 }
 
-var summary = RentalWorkflow.Run(parsed.Valid, policy, RentalWorkflow.DefaultMaxDays);
+var summary = RentalWorkflow.Run(
+    parsed.Valid.Select(v => v.Request).ToList(),
+    policy,
+    RentalWorkflow.DefaultMaxDays
+);
 
 Console.WriteLine($"Policy: {policyName.ToLowerInvariant()}");
 if (summary.Count == 0)
