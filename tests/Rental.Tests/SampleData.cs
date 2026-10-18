@@ -1,11 +1,12 @@
 using System.Collections.Immutable;
 using Rental.Domain.Models;
+using Rental.Domain.States;
 
 namespace Rental.Tests;
 
 /// <summary>
 /// The R1 to R6 rows of data/requests.csv as records, shared by every test file.
-/// Expected totals are in docs/contracts.md ("Dataset and expected results").
+/// Expected totals are in README.md ("Dataset and expected results").
 /// </summary>
 public static class SampleData
 {
@@ -18,4 +19,20 @@ public static class SampleData
 
     /// <summary>All six rows in file order (R4 is the one Stage 1 excludes).</summary>
     public static readonly ImmutableArray<RentalRequest> All = [R1, R2, R3, R4, R5, R6];
+
+    /// <summary>
+    /// Test-only helper: runs <see cref="ValidatedRental.Create"/> and throws if the record is invalid,
+    /// so a broken sample row fails the test loudly instead of being skipped.
+    /// </summary>
+    public static ValidatedRental Validated(RentalRequest request) =>
+        ValidatedRental.Create(request) switch
+        {
+            Validation<ValidatedRental>.Valid valid => valid.Value,
+            Validation<ValidatedRental>.Invalid invalid =>
+                throw new InvalidOperationException($"Sample row {request.Id} is invalid: {string.Join("; ", invalid.Reasons)}"),
+            _ => throw new InvalidOperationException("Unknown validation result"),
+        };
+
+    /// <summary><see cref="All"/> after validation, in the same order.</summary>
+    public static readonly ImmutableArray<ValidatedRental> ValidatedAll = [.. All.Select(Validated)];
 }
