@@ -2,7 +2,7 @@
 
 Introduction to Functional Programming, 2026/2027. A group project built up across Assignments 5 to 8 and the final project.
 
-The shop rents bikes, skis and camping gear. The program reads rental requests from a CSV file, keeps the eligible ones, prices them with a selectable pricing policy, and prints the quotes.
+The shop rents bikes, skis and camping gear. The program reads rental requests from a CSV file, keeps the eligible ones, prices them with a selectable pricing policy, and prints the quotes. Since Assignment 6 it also confirms each quote against a stock file and prints which bookings were accepted and what stock is left.
 
 ## Intended users
 
@@ -28,21 +28,24 @@ Run these from the repository root:
 ```
 dotnet build
 dotnet test
-dotnet run --project src/Rental.App -- data/requests.csv standard
-dotnet run --project src/Rental.App -- data/requests.csv discount
+dotnet run --project src/Rental.App -- data/requests.csv standard data/stock.csv
+dotnet run --project src/Rental.App -- data/requests.csv discount data/stock.csv
+dotnet run --project src/Rental.App -- data/requests.csv standard data/stock-missing-item.csv
+dotnet run --project src/Rental.App -- data/requests-invalid.csv standard data/stock.csv
+dotnet test --filter Confirm_Twice
 ```
 
-Usage: `dotnet run --project src/Rental.App -- <csv path> <standard|discount>`. Wrong arguments print the usage; a missing file, invalid rows or an unknown policy print a clear error and exit with code 1.
+Usage: `dotnet run --project src/Rental.App -- <requests.csv> <standard|discount> <stock.csv>`. Since A6 the stock file is required. Wrong arguments print the usage; a missing file, invalid rows, an unknown policy or an invalid stock file print a clear error and exit with code 1. The A6 demo table is in [Assignment 6: safe booking](#a6-demo-commands).
 
 ### Demo commands
 
 | Case | Command | Expected |
 |---|---|---|
-| Normal, Standard | `dotnet run --project src/Rental.App -- data/requests.csv standard` | R3, R1, R2, R6, R5; grand total 790.00; count 5 |
-| Normal, Discount | `dotnet run --project src/Rental.App -- data/requests.csv discount` | R3, R1, R2, R6, R5; grand total 697.00; count 5 |
-| Invalid input | `dotnet run --project src/Rental.App -- data/requests-invalid.csv standard` | Every row error is printed, the pipeline does not run, exit code 1 |
-| Empty dataset | `dotnet run --project src/Rental.App -- data/requests-empty.csv standard` | "No eligible rentals."; grand total 0.00; count 0 |
-| Unknown policy | `dotnet run --project src/Rental.App -- data/requests.csv vip` | `Unknown policy`, exit code 1 |
+| Normal, Standard | `dotnet run --project src/Rental.App -- data/requests.csv standard data/stock.csv` | R3, R1, R2, R6, R5; grand total 790.00; count 5 |
+| Normal, Discount | `dotnet run --project src/Rental.App -- data/requests.csv discount data/stock.csv` | R3, R1, R2, R6, R5; grand total 697.00; count 5 |
+| Invalid input | `dotnet run --project src/Rental.App -- data/requests-invalid.csv standard data/stock.csv` | Every row error is printed, the pipeline does not run, exit code 1 |
+| Empty dataset | `dotnet run --project src/Rental.App -- data/requests-empty.csv standard data/stock.csv` | "No eligible rentals."; grand total 0.00; count 0 |
+| Unknown policy | `dotnet run --project src/Rental.App -- data/requests.csv vip data/stock.csv` | `Unknown policy`, exit code 1 |
 
 ## Input
 
@@ -167,6 +170,200 @@ Worked example (Standard): R3 35000, R1 15000, R2 12000, R6 12000, R5 5000. R2 a
 - Discount: order R3, R1, R2, R6, R5. Grand total **69700**, count 5.
 - `data/requests-invalid.csv`: a negative `Days` (X1), a non-numeric `Quantity` (X2), an empty `Customer` (X3), and an unknown `Category` (X4).
 - `data/requests-empty.csv`: the header row only (a **valid empty dataset**).
+
+## Assignment 6: safe booking
+
+A6 adds a booking step after the A5 pipeline. Each quote is confirmed against a stock file, in summary order, and every accepted booking reserves its items. The types make the wrong order of steps impossible to write instead of checking for it at run time.
+
+Pipeline: `Parse` (boundary) → `ValidatedRental.Create` → `RentalWorkflow.Run` → `Booking.ConfirmAll` → print (boundary). Stock is read from `stock.csv` and parsed with `StockParser.Parse`; the remaining stock is printed, never written back to the file.
+
+### Before and after
+
+**Before.** This is the unsafe design the A6 types replace. It lives in this README only and is not part of the project.
+
+```csharp
+// UNSAFE: one mutable object, and the caller must remember the order.
+public class RentalOrder
+{
+    public RentalRequest Request;
+    public bool IsValid;
+    public long TotalCents;
+    public bool IsConfirmed;
+    public Dictionary<string, int>? Stock;
+
+    public void Validate() { /* sets IsValid */ }
+    public void Price(Func<RentalRequest, long> policy) { TotalCents = policy(Request); }
+    public void LoadStock(Dictionary<string, int> stock) { Stock = stock; }
+    public void Confirm()
+    {
+        Stock![Request.ItemCode] -= Request.Quantity;
+        IsConfirmed = true;
+    }
+}
+```
+
+The required order is `Validate` → `Price` → `LoadStock` → `Confirm`, and `Confirm` only once. Nothing enforces it:
+
+| Mistake | What happens |
+|---|---|
+| `Confirm` before `Validate` | X1 with `Days = -2` is confirmed |
+| `Confirm` before `Price` | A booking is confirmed with a total of 0 |
+| `Confirm` without `LoadStock` | `Stock!` is null, so it crashes with a `NullReferenceException` |
+| `Confirm` twice | BIKE-01 goes 3 → 1 → -1 and the same order is booked twice |
+| R5 after R3 | Two tents are taken when one is left, TENT-01 goes to -1, and R5 is still "confirmed" |
+
+**After.** The safe call site. Each step returns a new value of a new type, and the next step only accepts that type:
+
+```csharp
+// RequestParser.Parse already ran ValidatedRental.Create on every row.
+ImmutableArray<ValidatedRental> rentals = parsed.Valid;
+QuoteSummary summary = RentalWorkflow.Run(rentals, policy, RentalWorkflow.DefaultMaxDays);
+BookingReport report = Booking.ConfirmAll(summary, stock);
+// inside ConfirmAll, for each quote:
+ConfirmResult result = BookingTransitions.Confirm(new BookingState.Quoted(quote), current);
+```
+
+Calls that no longer compile:
+
+| Call | Why it fails |
+|---|---|
+| `RentalWorkflow.Run(SampleData.All, policy, 14)` | `Run` takes `ValidatedRental`, not `RentalRequest` |
+| `new ValidatedRental(request)` | The constructor is private; the only way in is `ValidatedRental.Create` |
+| `new Stock(...)`, or `stock.Reserve("BIKE-01", 2)` from the app | The constructor is private and `Reserve` is `internal`, so only the domain can take stock |
+| `validation.Value` on a `Validation<T>` | The base type has no `Value`; you must `switch` on `Valid` / `Invalid` |
+| A new case added to a union from outside | The unions are closed (private constructor), so no other case can exist |
+
+Confirming the same booking twice still compiles, but it is safe: see the repeat rule below.
+
+### Cases of the three unions
+
+All three are closed (private constructor, sealed cases), and every `switch` over them names each case and ends with a default that throws.
+
+| Union | Case | Data | Meaning |
+|---|---|---|---|
+| `Validation<T>` | `Valid` | `T Value` | The input passed every rule |
+| | `Invalid` | `ImmutableArray<string> Reasons` | Every broken rule, never empty |
+| `BookingState` | `Quoted` | `PricedRental Quote` | Priced, not booked yet |
+| | `Confirmed` | `PricedRental Quote`, `string BookingId` | Booked; the id is `B-<Id>`, for example `B-R3` |
+| `ConfirmResult` | `Accepted` | `BookingState.Confirmed Booking`, `Stock Stock` | Booked, with the stock left after the reservation |
+| | `Rejected` | `string Reason` | Not booked; the stock is unchanged |
+
+### Factory rules
+
+| Factory | Valid when | Otherwise |
+|---|---|---|
+| `ValidatedRental.Create(RentalRequest)` | `Id`, `Customer`, `ItemCode` not blank; `Category` defined; `DailyRateCents > 0`; `Quantity >= 1`; `Days >= 1` | `Invalid` with every reason collected, not just the first |
+| `Stock.Create(rows)` | Each `ItemCode` not blank and listed once; `Available >= 0`. No rows at all is a valid empty stock | `Invalid` with every reason |
+| `StockParser.Parse(lines)` | Header is `ItemCode,Available`, then each row parses and `Stock.Create` accepts the rows | `Invalid`; `Program` prints the reasons and exits with code 1 |
+
+### Transitions
+
+`BookingTransitions.Confirm(BookingState state, Stock stock)`. All checks happen before `Reserve`, and neither input is ever changed.
+
+| From | Condition | Result |
+|---|---|---|
+| `Quoted` | No stock record for the item | `Rejected("<Id>: no stock record for <code>")` |
+| `Quoted` | `Quantity` is more than available | `Rejected("<Id>: not enough <code> (requested q, available n)")` |
+| `Quoted` | `Quantity` is at most available (equal is accepted and leaves 0) | `Accepted(Confirmed(quote, "B-<Id>"), stock with Quantity reserved)` |
+| `Confirmed` | Any | `Accepted(same booking, same stock)` |
+
+**Repeat rule.** Confirming a booking that is already `Confirmed` returns the same booking and the same stock, so stock is reserved only once. Show it with:
+
+```
+dotnet test --filter Confirm_Twice
+```
+
+### Booking all quotes (Member D)
+
+[src/Rental.Domain/Pipeline/Booking.cs](src/Rental.Domain/Pipeline/Booking.cs)
+
+| | |
+|---|---|
+| Input | `QuoteSummary summary`, `Stock stock` |
+| Output | `BookingReport(Lines, RemainingStock, ConfirmedTotalCents)`; each `BookingLine` is a quote and its `ConfirmResult` |
+| Rule | Go through the quotes in summary order. `Accepted` passes its new stock to the next quote and adds the quote total; `Rejected` changes nothing. The stock passed in is never changed. No console, no files |
+
+Worked example, `data/stock.csv` (BIKE-01 3, SKI-02 1, TENT-01 2) with Standard: R3 takes 1 tent (2 → 1), R1 takes 2 bikes (3 → 1), R2 takes the only ski (1 → 0), R6 takes the last bike (1 → 0), and R5 needs 2 tents but only 1 is left, so it is rejected. Confirmed total 350 + 150 + 120 + 120 = 740.00. Stock left BIKE-01=0, SKI-02=0, TENT-01=1.
+
+### Stock file
+
+`data/stock.csv`, header `ItemCode,Available`:
+
+| ItemCode | Available |
+|---|---|
+| BIKE-01 | 3 |
+| SKI-02 | 1 |
+| TENT-01 | 2 |
+
+`data/stock-missing-item.csv` is the same file without the SKI-02 row.
+
+### A6 demo commands
+
+| Case | Command | Expected |
+|---|---|---|
+| Standard | `dotnet run --project src/Rental.App -- data/requests.csv standard data/stock.csv` | B-R3, B-R1, B-R2, B-R6 confirmed; R5 rejected `not enough TENT-01 (requested 2, available 1)`; confirmed total 740.00; stock left BIKE-01=0, SKI-02=0, TENT-01=1 |
+| Discount | `dotnet run --project src/Rental.App -- data/requests.csv discount data/stock.csv` | Same bookings; confirmed total 647.00; same stock left |
+| Missing stock record | `dotnet run --project src/Rental.App -- data/requests.csv standard data/stock-missing-item.csv` | B-R3, B-R1, B-R6 confirmed; R2 rejected `no stock record for SKI-02`; R5 rejected; confirmed total 620.00; stock left BIKE-01=0, TENT-01=1 |
+| Invalid requests | `dotnet run --project src/Rental.App -- data/requests-invalid.csv standard data/stock.csv` | The same 4 error lines as A5, nothing confirmed, exit code 1 |
+
+The A5 quote list and grand totals (790.00 / 697.00) do not change. Output of the first command:
+
+```
+Policy: standard
+R3   Cara           350.00
+R1   Anna           150.00
+R2   Ben            120.00
+R6   Finn           120.00
+R5   Eve             50.00
+Grand total: 790.00
+Count: 5
+
+Bookings:
+B-R3   confirmed      350.00
+B-R1   confirmed      150.00
+B-R2   confirmed      120.00
+B-R6   confirmed      120.00
+R5     REJECTED   R5: not enough TENT-01 (requested 2, available 1)
+Confirmed total: 740.00
+Stock left: BIKE-01=0, SKI-02=0, TENT-01=1
+```
+
+### A6 requirement map
+
+| Assignment task | File | Method / type |
+|---|---|---|
+| Closed union for results | `src/Rental.Domain/States/` | `Validation<T>` |
+| Closed unions for states | `src/Rental.Domain/States/` | `BookingState`, `ConfirmResult` |
+| Smart constructor (request) | `src/Rental.Domain/States/ValidatedRental.cs` | `ValidatedRental.Create` |
+| Smart constructor (stock) | `src/Rental.Domain/States/` | `Stock.Create` |
+| Parse stock at the boundary | `src/Rental.App/Io/StockParser.cs` | `StockParser.Parse` |
+| State transition | `src/Rental.Domain/States/BookingTransitions.cs` | `BookingTransitions.Confirm` |
+| Pipeline takes only validated input | `src/Rental.Domain/Pipeline/RentalWorkflow.cs` | `RentalWorkflow.Run` |
+| Confirm every quote, pass the stock on | `src/Rental.Domain/Pipeline/Booking.cs` | `Booking.ConfirmAll` |
+| Exhaustive `switch` at the boundary | `src/Rental.App/Program.cs` | top-level statements |
+| Stock sample data | `data/` | `stock.csv`, `stock-missing-item.csv` |
+| Validated test records | `tests/Rental.Tests/SampleData.cs` | `SampleData.Validated`, `SampleData.ValidatedAll` |
+
+### A6 tests
+
+| Test | File | Expected |
+|---|---|---|
+| `ConfirmAll_SampleData_ConfirmsFourRejectsR5` | `BookingTests.cs` | B-R3, B-R1, B-R2, B-R6 accepted; R5 rejected with its reason; total 74000; stock 0 / 0 / 1 |
+| `ConfirmAll_MissingStockRecord_RejectsOnlyThatItem` | `BookingTests.cs` | Without SKI-02: R2 and R5 rejected; total 62000 |
+| `ConfirmAll_DoesNotChangeInputStock` | `BookingTests.cs` | The stock passed in still reports 3 / 1 / 2 |
+| `NormalWorkflow_Standard_MatchesDocumentedResult`, `NormalWorkflow_Discount_MatchesDocumentedResult`, `EmptyDataset_ReturnsEmptySummary` | `WorkflowTests.cs` | The A5 results, now from `SampleData.ValidatedAll` |
+| _TODO (A)_ | _TODO (A)_ | _TODO (A)_ |
+| _TODO (B)_ | _TODO (B)_ | _TODO (B)_ |
+| _TODO (C), including `Confirm_Twice`_ | _TODO (C)_ | _TODO (C)_ |
+
+### A6 members
+
+| Member | Logic | Tests | Docs |
+|---|---|---|---|
+| A | `ValidatedRental`, `StockParser`; the parser keeps text checks only | _TODO (A)_ | _TODO (A): validation and stock file section_ |
+| B | `Validation<T>`, `BookingState`, `ConfirmResult`, `Stock` | _TODO (B)_ | _TODO (B): unions and stock section_ |
+| C | `BookingTransitions.Confirm` | _TODO (C)_ | _TODO (C): transitions and repeat rule section_ |
+| D | `RentalWorkflow.Run` on validated input, `Booking.ConfirmAll`, `Program.cs`, `data/stock*.csv` | `BookingTests.cs`, `WorkflowTests.cs`, `SampleData.cs` | This section, before and after, demo table |
 
 ## Requirement map
 
