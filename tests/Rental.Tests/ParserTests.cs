@@ -62,8 +62,7 @@ public class ParserTests
 
         Assert.Empty(result.Errors);
         Assert.Single(result.Valid);
-        Assert.False(result.Valid[0].IsMember);
-    }
+        Assert.False(result.Valid[0].Request.IsMember);    }
     
     [Theory]
     [InlineData("0")]
