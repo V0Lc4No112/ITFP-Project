@@ -1,0 +1,5 @@
+Id,Customer,ItemCode,Category,DailyRateCents,Quantity,Days,IsMember
+X1,Gus,BIKE-01,Bike,1500,1,-2,false
+X2,Hana,SKI-02,Ski,4000,two,3,true
+X3,,TENT-01,Camping,2500,1,4,false
+X4,Ivan,BOAT-01,Boat,3000,1,2,false
