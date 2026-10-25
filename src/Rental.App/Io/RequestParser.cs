@@ -1,13 +1,13 @@
-
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using Rental.Domain.Models;
+using Rental.Domain.States;
 
 namespace Rental.App.Io;
 
 public sealed record ParseOutcome(
-    ImmutableArray<RentalRequest> Valid,
+    ImmutableArray<ValidatedRental> Valid,
     ImmutableArray<string> Errors
 );
 
@@ -18,7 +18,7 @@ public static class RequestParser
 
     public static ParseOutcome Parse(IReadOnlyList<string>? lines)
     {
-        var valid = ImmutableArray.CreateBuilder<RentalRequest>();
+        var valid = ImmutableArray.CreateBuilder<ValidatedRental>();
         var errors = ImmutableArray.CreateBuilder<string>();
 
         if (lines is null)
@@ -56,16 +56,6 @@ public static class RequestParser
             string customer = fields[1].Trim();
             string itemCode = fields[2].Trim();
 
-            if (string.IsNullOrWhiteSpace(id))
-                errors.Add($"Row {rowNumber}: Id must not be blank");
-
-            if (string.IsNullOrWhiteSpace(customer))
-                errors.Add($"Row {rowNumber}: Customer must not be blank");
-
-            if (string.IsNullOrWhiteSpace(itemCode))
-                errors.Add($"Row {rowNumber}: ItemCode must not be blank");
-
-            // Validate category: only Bike, Ski, Camping names are allowed.
             string categoryText = fields[3].Trim();
 
             bool categoryValid =
@@ -90,9 +80,9 @@ public static class RequestParser
             );
 
             if (!rateValid)
-                errors.Add($"Row {rowNumber}: DailyRateCents must be a number (was {fields[4]})");
-            else if (dailyRate <= 0)
-                errors.Add($"Row {rowNumber}: DailyRateCents must be > 0 (was {dailyRate})");
+                errors.Add(
+                    $"Row {rowNumber}: DailyRateCents must be a number (was {fields[4]})"
+                );
 
             bool quantityValid = int.TryParse(
                 fields[5].Trim(),
@@ -100,9 +90,9 @@ public static class RequestParser
             );
 
             if (!quantityValid)
-                errors.Add($"Row {rowNumber}: Quantity must be an integer (was {fields[5]})");
-            else if (quantity < 1)
-                errors.Add($"Row {rowNumber}: Quantity must be >= 1 (was {quantity})");
+                errors.Add(
+                    $"Row {rowNumber}: Quantity must be an integer (was {fields[5]})"
+                );
 
             bool daysValid = int.TryParse(
                 fields[6].Trim(),
@@ -110,9 +100,9 @@ public static class RequestParser
             );
 
             if (!daysValid)
-                errors.Add($"Row {rowNumber}: Days must be an integer (was {fields[6]})");
-            else if (days < 1)
-                errors.Add($"Row {rowNumber}: Days must be >= 1 (was {days})");
+                errors.Add(
+                    $"Row {rowNumber}: Days must be an integer (was {fields[6]})"
+                );
 
             bool memberValid = bool.TryParse(
                 fields[7].Trim(),
@@ -120,20 +110,43 @@ public static class RequestParser
             );
 
             if (!memberValid)
-                errors.Add($"Row {rowNumber}: IsMember must be true or false (was {fields[7]})");
+                errors.Add(
+                    $"Row {rowNumber}: IsMember must be true or false (was {fields[7]})"
+                );
 
-            if (errors.Count == errorCountBefore)
+            
+            if (errors.Count != errorCountBefore)
+                continue;
+
+            var candidate = new RentalRequest(
+                id,
+                customer,
+                itemCode,
+                category,
+                dailyRate,
+                quantity,
+                days,
+                isMember
+            );
+
+            
+            switch (ValidatedRental.Create(candidate))
             {
-                valid.Add(new RentalRequest(
-                    id,
-                    customer,
-                    itemCode,
-                    category,
-                    dailyRate,
-                    quantity,
-                    days,
-                    isMember
-                ));
+                case Validation<ValidatedRental>.Valid ok:
+                    valid.Add(ok.Value);
+                    break;
+
+                case Validation<ValidatedRental>.Invalid bad:
+                    foreach (var reason in bad.Reasons)
+                    {
+                        errors.Add($"Row {rowNumber}: {reason}");
+                    }
+                    break;
+
+                default:
+                    throw new InvalidOperationException(
+                        "Unexpected validation result"
+                    );
             }
         }
 
