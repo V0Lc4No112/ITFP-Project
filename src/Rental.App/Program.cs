@@ -1,7 +1,9 @@
 using System.Globalization;
 using Rental.App.Io;
+using Rental.Domain.Models;
 using Rental.Domain.Pipeline;
 using Rental.Domain.Policies;
+using Rental.Domain.Results;
 using Rental.Domain.States;
 
 if (args.Length != 3)
@@ -13,7 +15,6 @@ if (args.Length != 3)
 var path = args[0];
 var policyName = args[1];
 var stockPath = args[2];
-
 foreach (var file in new[] { path, stockPath })
 {
     if (!File.Exists(file))
@@ -24,7 +25,6 @@ foreach (var file in new[] { path, stockPath })
 }
 
 var lines = File.ReadAllLines(path);
-
 var parsed = RequestParser.Parse(lines);
 if (!parsed.Errors.IsEmpty)
 {
@@ -36,8 +36,7 @@ if (!parsed.Errors.IsEmpty)
     return 1;
 }
 
-var policy = PricingPolicies.FromName(policyName);
-if (policy is null)
+if (PricingPolicies.FromName(policyName) is not Option<Func<RentalRequest, long>>.Some { Value: var policy })
 {
     Console.Error.WriteLine($"Unknown policy: '{policyName}'. Use 'standard' or 'discount'.");
     return 1;
@@ -62,7 +61,6 @@ switch (StockParser.Parse(File.ReadAllLines(stockPath)))
 
 var summary = RentalWorkflow.Run(parsed.Valid, policy, RentalWorkflow.DefaultMaxDays);
 var report = Booking.ConfirmAll(summary, stock);
-
 Console.WriteLine($"Policy: {policyName.ToLowerInvariant()}");
 if (summary.Count == 0)
 {
@@ -74,27 +72,27 @@ foreach (var quote in summary.Quotes)
 }
 Console.WriteLine($"Grand total: {FormatCents(summary.GrandTotalCents)}");
 Console.WriteLine($"Count: {summary.Count}");
-
 Console.WriteLine();
 Console.WriteLine("Bookings:");
 foreach (var line in report.Lines)
 {
-    var text = line.Result switch
+    var lineText = line.Result switch
     {
-        ConfirmResult.Accepted accepted =>
-            $"{accepted.Booking.BookingId,-6} confirmed  {FormatCents(line.Quote.TotalCents),10}",
-        ConfirmResult.Rejected rejected =>
-            $"{line.Quote.Request.Id,-6} REJECTED   {rejected.Reason}",
+        Result<Reservation>.Ok ok =>
+            $"{ok.Value.Booking.BookingId,-6} confirmed  {FormatCents(line.Quote.TotalCents),10}",
+        Result<Reservation>.Fail fail =>
+            $"{line.Quote.Request.Id,-6} REJECTED   {fail.Error.Message}",
         _ => throw new InvalidOperationException("Unknown confirm result"),
     };
-    Console.WriteLine(text);
+    Console.WriteLine(lineText);
 }
 Console.WriteLine($"Confirmed total: {FormatCents(report.ConfirmedTotalCents)}");
 Console.WriteLine($"Stock left: {FormatStock(report.RemainingStock)}");
 return 0;
 
 static string FormatCents(long cents) =>
-    (cents / 100).ToString(CultureInfo.InvariantCulture) + "." + (Math.Abs(cents) % 100).ToString("00", CultureInfo.InvariantCulture);
+    (cents / 100).ToString(CultureInfo.InvariantCulture) + "." +
+    (Math.Abs(cents) % 100).ToString("00", CultureInfo.InvariantCulture);
 
 static string FormatStock(Stock stock) =>
     string.Join(", ", stock.Items

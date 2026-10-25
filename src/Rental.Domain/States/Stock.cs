@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using Rental.Domain.Results;
 
 namespace Rental.Domain.States;
 
@@ -16,8 +17,10 @@ public sealed class Stock
             var reasons => new Validation<Stock>.Invalid(reasons),
         };
 
-    public int? Available(string itemCode) =>
-        _available.TryGetValue(itemCode, out var available) ? available : null;
+    public Option<int> Available(string itemCode) =>
+        _available.TryGetValue(itemCode, out var available)
+            ? Option.Some(available)
+            : Option.None<int>();
 
     internal Stock Reserve(string itemCode, int quantity) =>
         new(_available.SetItem(itemCode, _available[itemCode] - quantity));
