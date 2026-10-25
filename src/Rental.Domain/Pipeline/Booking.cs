@@ -14,6 +14,12 @@ public sealed record BookingReport(
 
 public static class Booking
 {
+    /// <summary>
+    /// Confirms every quote in summary order (Member D). <c>Ok</c> passes its new stock on to the next quote
+    /// and adds the quote total; <c>Fail</c> (NoStockRecord, NotEnoughStock) changes nothing and stays a line
+    /// in the report. A rejected quote is not a failure of the whole run, so this returns a plain report,
+    /// not a <see cref="Result{T}"/>. The stock passed in is never changed.
+    /// </summary>
     public static BookingReport ConfirmAll(QuoteSummary summary, Stock stock)
     {
         var lines = ImmutableArray.CreateBuilder<BookingLine>(summary.Quotes.Length);
