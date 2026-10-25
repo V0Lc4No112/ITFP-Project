@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Collections.Immutable;
 using Rental.Domain.Models;
 using Rental.Domain.States;
+using Rental.Domain.Results;
+
 
 namespace Rental.App.Io;
 
@@ -155,4 +157,22 @@ public static class RequestParser
             errors.ToImmutable()
         );
     }
+    
+public static Result<ImmutableArray<ValidatedRental>> Load(string path) =>
+    DataFile.ReadLines("requests", path)
+        .Bind(lines => Parse(lines) switch
+        {
+            { Errors.IsEmpty: true } ok =>
+                Result.Ok(ok.Valid),
+
+            var bad =>
+                Result.Fail<ImmutableArray<ValidatedRental>>(
+                    new Error(
+                        ErrorCode.InvalidRequest,
+                        $"Requests file '{path}' has {bad.Errors.Length} error(s); nothing was priced or booked",
+                        bad.Errors
+                    )
+                )
+        });
+
 }

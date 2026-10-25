@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using Rental.Domain.States;
+using Rental.Domain.Results;
 
 namespace Rental.App.Io;
 
@@ -60,4 +61,16 @@ public static class StockParser
 
         return Stock.Create(rows);
     }
+    
+    public static Result<Stock> Load(string path) =>
+    DataFile.ReadLines("stock", path)
+        .Bind(lines => Parse(lines).ToResult(reasons =>
+            new Error(
+                ErrorCode.MalformedFile,
+                $"Stock file '{path}' is malformed; no stock was loaded",
+                reasons
+            )
+        ));
+
+    
 }
