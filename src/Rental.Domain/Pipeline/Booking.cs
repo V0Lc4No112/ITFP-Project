@@ -1,16 +1,12 @@
 using System.Collections.Immutable;
 using Rental.Domain.Models;
+using Rental.Domain.Results;
 using Rental.Domain.States;
 
 namespace Rental.Domain.Pipeline;
 
-/// <summary>One quote and what happened when it was confirmed.</summary>
-public sealed record BookingLine(PricedRental Quote, ConfirmResult Result);
+public sealed record BookingLine(PricedRental Quote, Result<Reservation> Result);
 
-/// <remarks>
-/// ImmutableArray uses reference equality inside a record, so compare
-/// <see cref="Lines"/> with SequenceEqual in tests.
-/// </remarks>
 public sealed record BookingReport(
     ImmutableArray<BookingLine> Lines,
     Stock RemainingStock,
@@ -19,9 +15,10 @@ public sealed record BookingReport(
 public static class Booking
 {
     /// <summary>
-    /// Confirms every quote in summary order (total descending, then Id) against the stock.
-    /// Each accepted booking passes its new stock to the next quote; a rejection changes nothing.
-    /// The stock passed in is never changed. Pure: no Console, no files.
+    /// Confirms every quote in summary order (Member D). <c>Ok</c> passes its new stock on to the next quote
+    /// and adds the quote total; <c>Fail</c> (NoStockRecord, NotEnoughStock) changes nothing and stays a line
+    /// in the report. A rejected quote is not a failure of the whole run, so this returns a plain report,
+    /// not a <see cref="Result{T}"/>. The stock passed in is never changed.
     /// </summary>
     public static BookingReport ConfirmAll(QuoteSummary summary, Stock stock)
     {
@@ -32,14 +29,13 @@ public static class Booking
         foreach (var quote in summary.Quotes)
         {
             var result = BookingTransitions.Confirm(new BookingState.Quoted(quote), current);
-
             switch (result)
             {
-                case ConfirmResult.Accepted accepted:
-                    current = accepted.Stock;
+                case Result<Reservation>.Ok ok:
+                    current = ok.Value.Stock;
                     confirmedTotal += quote.TotalCents;
                     break;
-                case ConfirmResult.Rejected:
+                case Result<Reservation>.Fail:
                     break;
                 default:
                     throw new InvalidOperationException($"Unknown confirm result: {result.GetType().Name}");
