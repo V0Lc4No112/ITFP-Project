@@ -484,3 +484,6 @@ $RECYCLE.BIN/
 # Project-specific
 native/build/
 *.zip
+
+# Demo 4 output (A8 revenue export)
+/revenue-report.csv
