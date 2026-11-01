@@ -11,6 +11,8 @@ public enum ErrorCode
     FileMissing,
     FileUnreadable,
     MalformedFile,
+    FileUnwritable,
+    NativeUnavailable,
 }
 
 public sealed record Error
@@ -21,15 +23,24 @@ public sealed record Error
 
     public ImmutableArray<string> Details { get; }
 
-    public Error(ErrorCode code, string message, ImmutableArray<string> details = default)
+    public Error(
+        ErrorCode code,
+        string message,
+        ImmutableArray<string> details = default)
     {
         Code = code;
         Message = string.IsNullOrWhiteSpace(message)
-            ? throw new ArgumentException("Error needs a message", nameof(message))
+            ? throw new ArgumentException(
+                "Error needs a message", nameof(message))
             : message;
+
         Details = details.IsDefault ? [] : details;
     }
 
     public bool IsOperational =>
-        Code is ErrorCode.FileMissing or ErrorCode.FileUnreadable or ErrorCode.MalformedFile;
+        Code is ErrorCode.FileMissing
+            or ErrorCode.FileUnreadable
+            or ErrorCode.MalformedFile
+            or ErrorCode.FileUnwritable
+            or ErrorCode.NativeUnavailable;
 }
