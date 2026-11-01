@@ -2,14 +2,17 @@ using System.Collections.Immutable;
 using Rental.App;
 using Rental.Domain.Results;
 
-if (args.Length != 3)
+if (args.Length is not (3 or 4))
 {
-    Console.Error.WriteLine("Usage: dotnet run --project src/Rental.App -- <requests.csv> <standard|discount> <stock.csv>");
+    Console.Error.WriteLine("Usage: dotnet run --project src/Rental.App -- <requests.csv> <standard|discount|weekly> <stock.csv> [revenue-report.csv]");
     return 1;
 }
 
-// One chain, rendered with a pure Map. Nothing is printed until the whole chain has finished.
-var outcome = AppWorkflow.Execute(args[0], args[1], args[2]).Map(Display.Render);
+// One chain, rendered with a pure Map. Nothing is printed until the whole chain (and the export) has finished.
+var run = args.Length == 4
+    ? AppWorkflow.ExecuteAndExport(args[0], args[1], args[2], args[3])
+    : AppWorkflow.Execute(args[0], args[1], args[2]);
+var outcome = run.Map(Display.Render);
 
 // The only place the final outcome is handled.
 switch (outcome)

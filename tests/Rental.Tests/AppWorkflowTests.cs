@@ -59,7 +59,18 @@ public class AppWorkflowTests
             "R5     REJECTED   [NotEnoughStock] R5: not enough TENT-01 (requested 2, available 1)",
             "Confirmed total: 740.00",
             "Service fee (native C): 5.00",
+            "Total due: 745.00",
             "Stock left: BIKE-01=0, SKI-02=0, TENT-01=1",
+            "",
+            "Revenue by category:",
+            "Camping    1 booking(s)   1 item(s)     350.00",
+            "Bike       2 booking(s)   3 item(s)     270.00",
+            "Ski        1 booking(s)   1 item(s)     120.00",
+            "",
+            "Low stock (left <= 1):",
+            "BIKE-01    0 left",
+            "SKI-02     0 left",
+            "TENT-01    1 left",
         }, ok.Value);
     }
 
@@ -116,7 +127,9 @@ public class AppWorkflowTests
         string requests = temp.Write("requests.csv", RequestParser.Header, "X1,Gus,BIKE-01,Bike,1500,1,-2,false");
         string stock = temp.PathOf("no-such-stock.csv");
 
-        var result = AppWorkflow.Execute(requests, "vip", stock);.
+        var result = AppWorkflow.Execute(requests, "vip", stock);
+
+        // The policy and the stock are wrong as well; only the first failure is reported.
         var fail = Assert.IsType<Result<RunOutcome>.Fail>(result);
         Assert.Equal(ErrorCode.InvalidRequest, fail.Error.Code);
         Assert.Equal(new[] { "Row 2: Days must be >= 1 (was -2)" }, fail.Error.Details);
@@ -139,5 +152,48 @@ public class AppWorkflowTests
 
         Assert.Equal(500L, success.Value.ServiceFeeCents);
         Assert.Equal(74000L, success.Value.Booking.ConfirmedTotalCents);
+    }
+
+    [Fact]
+    public void ExecuteAndExport_SampleFiles_ReportsNativeFeeAndSavesRevenueCsv()
+    {
+        using var temp = new TempFolder();
+        string requests = temp.Write("requests.csv", RequestLines);
+        string stock = temp.Write("stock.csv", StockLines);
+        string export = temp.PathOf("revenue.csv");
+
+        var result = AppWorkflow.ExecuteAndExport(requests, "standard", stock, export);
+
+        var ok = Assert.IsType<Result<RunOutcome>.Ok>(result);
+        Assert.Equal(500L, ok.Value.ServiceFeeCents);
+        Assert.Equal(74500L, ok.Value.TotalDueCents);
+        Assert.Equal(new[] { "BIKE-01", "SKI-02", "TENT-01" }, ok.Value.LowStock.Select(row => row.ItemCode));
+        var saved = Assert.IsType<Option<string>.Some>(ok.Value.ExportedTo);
+        Assert.Equal(export, saved.Value);
+        Assert.Equal(new[]
+        {
+            "Category,Bookings,Items,RevenueCents",
+            "Camping,1,1,35000",
+            "Bike,2,3,27000",
+            "Ski,1,1,12000",
+        }, File.ReadAllLines(export));
+    }
+
+    [Fact]
+    public void ExecuteAndExport_ExportFolderMissing_FailsAndLeavesNoReport()
+    {
+        using var temp = new TempFolder();
+        string requests = temp.Write("requests.csv", RequestLines);
+        string stock = temp.Write("stock.csv", StockLines);
+        string export = Path.Combine(temp.Path, "no-folder", "revenue.csv");
+
+        var result = AppWorkflow.ExecuteAndExport(requests, "standard", stock, export);
+
+        var fail = Assert.IsType<Result<RunOutcome>.Fail>(result);
+        Assert.Equal(ErrorCode.FileUnwritable, fail.Error.Code);
+        Assert.Equal($"Cannot write report file '{export}': folder not found", fail.Error.Message);
+        Assert.False(File.Exists(export));
+        Assert.Equal(StockLines, File.ReadAllLines(stock));
+        Assert.Equal(RequestLines, File.ReadAllLines(requests));
     }
 }

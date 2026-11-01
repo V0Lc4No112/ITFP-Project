@@ -43,7 +43,33 @@ public static class Display
         }
         lines.Add($"Confirmed total: {FormatCents(report.ConfirmedTotalCents)}");
         lines.Add($"Service fee (native C): {FormatCents(outcome.ServiceFeeCents)}");
+        lines.Add($"Total due: {FormatCents(outcome.TotalDueCents)}");
         lines.Add($"Stock left: {FormatStock(report.RemainingStock)}");
+        lines.Add("");
+        lines.Add("Revenue by category:");
+        if (outcome.Revenue.IsEmpty)
+        {
+            lines.Add("No confirmed bookings.");
+        }
+        foreach (var row in outcome.Revenue)
+        {
+            lines.Add($"{row.Category,-8} {row.Bookings,3} booking(s) {row.Items,3} item(s) {FormatCents(row.RevenueCents),10}");
+        }
+        lines.Add("");
+        lines.Add($"Low stock (left <= {AppWorkflow.LowStockThreshold}):");
+        if (outcome.LowStock.IsEmpty)
+        {
+            lines.Add("No item is low.");
+        }
+        foreach (var row in outcome.LowStock)
+        {
+            lines.Add($"{row.ItemCode,-8} {row.Left,3} left");
+        }
+        if (outcome.ExportedTo is Option<string>.Some exported)
+        {
+            lines.Add("");
+            lines.Add($"Revenue report saved to {exported.Value}");
+        }
 
         return lines.ToImmutable();
     }
