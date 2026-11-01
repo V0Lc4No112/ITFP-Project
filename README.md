@@ -2,7 +2,7 @@
 
 Introduction to Functional Programming, 2026/2027. A group project built up across Assignments 5 to 8 and the final project.
 
-The shop rents bikes, skis and camping gear. The program reads rental requests from a CSV file, keeps the eligible ones, prices them with a selectable pricing policy, and prints the quotes. Since Assignment 6 it also confirms each quote against a stock file and prints which bookings were accepted and what stock is left. Since Assignment 7 every step that can fail returns a `Result`, every lookup returns an `Option`, and the whole run is one `Map`/`Bind` chain whose outcome is handled once (see [Assignment 7](#assignment-7-exception-handling-in-fp)).
+The shop rents bikes, skis and camping gear. The program reads rental requests from a CSV file, keeps the eligible ones, prices them with a selectable pricing policy, and prints the quotes. Since Assignment 6 it also confirms each quote against a stock file and prints which bookings were accepted and what stock is left. Since Assignment 7 every step that can fail returns a `Result`, every lookup returns an `Option`, and the whole run is one `Map`/`Bind` chain whose outcome is handled once (see [Assignment 7](#assignment-7-exception-handling-in-fp)). Since Assignment 8 the run also prints two LINQ reports (revenue by category, low stock), a service fee computed by a native C library and the total due, and can export the revenue report to CSV (see [Assignment 8](#assignment-8-extension-methods-and-linq)).
 
 ## Intended users
 
@@ -30,6 +30,9 @@ dotnet build
 dotnet test
 dotnet run --project src/Rental.App -- data/requests.csv standard data/stock.csv
 dotnet run --project src/Rental.App -- data/requests.csv discount data/stock.csv
+dotnet run --project src/Rental.App -- data/requests.csv weekly data/stock.csv
+dotnet run --project src/Rental.App -- data/requests.csv standard data/stock.csv revenue-report.csv
+dotnet run --project src/Rental.App -- data/requests.csv standard data/stock.csv no-such-folder/revenue.csv
 dotnet run --project src/Rental.App -- data/requests.csv standard data/stock-missing-item.csv
 dotnet run --project src/Rental.App -- data/requests.csv standard data/stock-sold-out.csv
 dotnet run --project src/Rental.App -- data/requests.csv vip data/stock.csv
@@ -39,7 +42,7 @@ dotnet run --project src/Rental.App -- data/requests.csv standard data/stock-mal
 dotnet test --filter Confirm_Twice
 ```
 
-Usage: `dotnet run --project src/Rental.App -- <requests.csv> <standard|discount> <stock.csv>`. Since A6 the stock file is required. Wrong arguments print the usage. Since A7 every failure (invalid rows, unknown policy, missing or malformed file) prints `Rejected [Code]: ...` or `File problem [Code]: ...` on standard error and exits with code 1; nothing is printed on standard output. The expected screens are in [A7 demo commands](#a7-demo-commands-task-5).
+Usage: `dotnet run --project src/Rental.App -- <requests.csv> <standard|discount|weekly> <stock.csv> [revenue-report.csv]`. Since A6 the stock file is required; since A8 an optional 4th argument saves the revenue report as CSV. Wrong arguments print the usage. Since A7 every failure (invalid rows, unknown policy, missing or malformed file) prints `Rejected [Code]: ...` or `File problem [Code]: ...` on standard error and exits with code 1; nothing is printed on standard output. The expected screens are in [A8 demo commands](#a8-demo-commands) (A7 screens: [A7 demo commands](#a7-demo-commands-task-5), now followed by the A8 lines).
 
 ### Demo commands
 
@@ -49,7 +52,7 @@ Usage: `dotnet run --project src/Rental.App -- <requests.csv> <standard|discount
 | Normal, Discount | `dotnet run --project src/Rental.App -- data/requests.csv discount data/stock.csv` | R3, R1, R2, R6, R5; grand total 697.00; count 5 |
 | Invalid input | `dotnet run --project src/Rental.App -- data/requests-invalid.csv standard data/stock.csv` | `Rejected [InvalidRequest]: ...` and every row error, the pipeline does not run, exit code 1 |
 | Empty dataset | `dotnet run --project src/Rental.App -- data/requests-empty.csv standard data/stock.csv` | "No eligible rentals."; grand total 0.00; count 0; nothing booked; stock left BIKE-01=3, SKI-02=1, TENT-01=2 |
-| Unknown policy | `dotnet run --project src/Rental.App -- data/requests.csv vip data/stock.csv` | `Rejected [UnknownPolicy]: Unknown policy 'vip'. Use 'standard' or 'discount'`, exit code 1 |
+| Unknown policy | `dotnet run --project src/Rental.App -- data/requests.csv vip data/stock.csv` | `Rejected [UnknownPolicy]: Unknown policy 'vip'. Use 'standard', 'discount' or 'weekly'`, exit code 1 |
 
 ## Input
 
@@ -682,6 +685,329 @@ Test count (theory cases counted one by one): 16 (A5) + 30 (A6) + 7 (B) + 5 (A) 
 
 Build and run: see [Build, run, test](#build-run-test) (working directory = repository root, .NET SDK 10.0.100).
 
+## Assignment 8: extension methods and LINQ
+
+A8 adds **queries and configuration** on top of the A7 chain without changing what earlier runs print above the new lines. After the bookings are confirmed, two pure LINQ reports read the booking report: **revenue by category** (for the shop manager) and **low stock after booking** (for staff who restock). A custom extension, `ConfirmedQuotes()`, feeds report 1 and the native fee. The A5 discount became a **curried** rule, `DaysDiscount(minDays)(percentOff)`; fixing its two arguments gives the old `discount` policy and a new `weekly` policy, so the same data gives two different totals. Pricing runs through a **`yield` iterator** that does nothing until enumerated, and `PriceAll` materialises it once. Files are read through a `using` reader that is released on success, failure and early stop, and report 1 can be **exported** to CSV through a `using` writer. The native C library computes the service fee, which also feeds a new **Total due** line.
+
+### Workflow (Member D)
+
+[src/Rental.App/AppWorkflow.cs](src/Rental.App/AppWorkflow.cs)
+
+```
+args ─> Program: 3 args -> AppWorkflow.Execute ; 4 args -> AppWorkflow.ExecuteAndExport (D)
+  RequestParser.Load ─> DataFile.ReadLines ─> StreamLines (yield, using reader)        A
+    .Bind(PricingPolicies.FromName  "standard" | "discount" = DaysDiscount(5)(15)       C
+                                    | "weekly" = DaysDiscount(7)(25))
+      .Map(RentalWorkflow.Run ─> Stages.SelectEligible ─> Pricing.PriceAll              A5
+                                   = PriceEach(yield).ToImmutableArray()  <- snapshot   D
+                                ─> Stages.BuildSummary)
+    .Bind(StockParser.Load(stock)                                                       A
+      .Map(Booking.ConfirmAll)                                                          A6/A7
+      .Bind(ServiceFee: booking.ConfirmedQuotes().Sum(qty) -> NativeFeeAdapter (C lib)) B ext, A
+        .Map(new RunOutcome(..., RentalReports.RevenueByCategory(booking),              B
+                                 RentalReports.LowStock(booking.RemainingStock, 1))))   B
+  [ExecuteAndExport] .Bind(DataFile.WriteLines("report", path, ReportCsv.Revenue(...))) A, D
+  .Map(Display.Render)  ─> one switch in Program: Ok -> print, exit 0 ; Fail -> stderr, exit 1
+```
+
+```csharp
+public static Result<RunOutcome> Execute(string requestsPath, string policyName, string stockPath) =>
+    RequestParser.Load(requestsPath)
+        .Bind(rentals => PricingPolicies.FromName(policyName)
+            .ToResult(() => new Error(ErrorCode.UnknownPolicy,
+                $"Unknown policy '{policyName}'. Use 'standard', 'discount' or 'weekly'"))
+            .Map(policy => RentalWorkflow.Run(rentals, policy, RentalWorkflow.DefaultMaxDays)))
+        .Bind(summary => StockParser.Load(stockPath)
+            .Map(stock => Booking.ConfirmAll(summary, stock))
+            .Bind(booking => ServiceFee(booking)
+                .Map(fee => new RunOutcome(policyName.ToLowerInvariant(), summary, booking, fee,
+                    RentalReports.RevenueByCategory(booking),
+                    RentalReports.LowStock(booking.RemainingStock, LowStockThreshold)))));
+```
+
+| New step | `Map` or `Bind` | Why |
+|---|---|---|
+| `Booking.ConfirmAll` | `Map` | Confirming **cannot fail**: a rejected quote is a line inside the report (A6/A7 rule) |
+| `ServiceFee` → `NativeFeeAdapter.Calculate` | `Bind` | The native call **can fail** (library missing, wrong platform, invalid input), so it returns a `Result` |
+| `new RunOutcome(...)` with both reports | `Map` | Building the outcome and the two pure reports cannot fail |
+| `DataFile.WriteLines` (only in `ExecuteAndExport`) | `Bind` | Writing a file **can fail** (`FileUnwritable`) |
+| `Display.Render` (in `Program`) | `Map` | Unchanged since A7 |
+
+What changed from the A7/A8-native version and why:
+- The big block lambda that confirmed, counted items and called the native fee became `Map(ConfirmAll)` + `Bind(ServiceFee)` + `Map(new RunOutcome)`. The step kind now says whether the step can fail.
+- The inline `Where(line => line.Result is Ok).Sum(...)` became B's `ConfirmedQuotes()` extension, so the revenue report and the fee use **one** definition of "confirmed".
+- The reports are computed **once** here (pure, on domain values) and stored in `RunOutcome`. `Display` and the export only read them; calculation stays out of display and file code.
+- The native value is used in a calculation: `RunOutcome.TotalDueCents = Booking.ConfirmedTotalCents + ServiceFeeCents`.
+- Export is a `Bind` after `Execute`, so a write failure becomes the run's `Fail` and nothing is printed: no half output, no partial file, inputs untouched. The CSV lines are built (`ReportCsv.Revenue`, pure) **before** the file is opened.
+
+[src/Rental.App/ReportCsv.cs](src/Rental.App/ReportCsv.cs) turns report 1 into lines: header `Category,Bookings,Items,RevenueCents`, then one line per category. Money stays in integer cents in the file, so nothing is rounded and the file can be read back exactly. [src/Rental.App/Program.cs](src/Rental.App/Program.cs) accepts an optional 4th argument (the export path) and still has exactly one `switch`.
+
+### Extensions (Task 1)
+
+| Extension | Receiver | Returns | Behaviour | Used in | Why on this receiver | Owner |
+|---|---|---|---|---|---|---|
+| `ConfirmedQuotes()` ([BookingReportExtensions.cs](src/Rental.Domain/Extensions/BookingReportExtensions.cs)) | `BookingReport` | `IEnumerable<PricedRental>` (deferred) | Keeps the lines whose `Result` is `Ok`, in booking order, and returns the quote of each. The report is not changed | `RentalReports.RevenueByCategory`, `AppWorkflow.ServiceFee` | "Confirmed" is a fact about a booking report, not about a quote or a list of quotes. Before A8 the same filter was written inline in `AppWorkflow`; now report 1 and the native fee ask the report the same question in one place | B |
+| `BaseCents()` ([RentalRequestExtensions.cs](src/Rental.Domain/Extensions/RentalRequestExtensions.cs)) | `RentalRequest` | `long` cents | Daily rate × quantity × days, no rounding | `PricingPolicies.Standard`, `DaysDiscount` (so every priced quote) | The base price depends only on the request's own fields, so `request.BaseCents()` reads as a property of the request. Every pricing rule starts from it, so it is written once. It is not a record member because `RentalRequest` is the A5 data contract and stays rule-free | C |
+
+### Reports (Task 2, Member B)
+
+[src/Rental.Domain/Reports/RentalReports.cs](src/Rental.Domain/Reports/RentalReports.cs). Both are pure, return `ImmutableArray`, and know nothing about the screen or files.
+
+| | Report 1: Revenue by category | Report 2: Low stock after booking |
+|---|---|---|
+| Input | `BookingReport` built from `data/requests.csv` + `data/stock.csv` | `BookingReport.RemainingStock` from the same run |
+| Intended user | Shop manager (which category earns money) | Staff who restock |
+| Filter | Only confirmed lines (`ConfirmedQuotes`: `Where` + `Select`) | `Where` left ≤ threshold (the app uses 1) |
+| Output fields | Category, Bookings (`Count`), Items (`Sum` quantity), RevenueCents (`Sum` total) | ItemCode, Left |
+| Order | Revenue descending, then category name A→Z | Left ascending, then item code A→Z |
+| Expected on demo 1 (standard) | Camping 1 / 1 / 350.00; Bike 2 / 3 / 270.00; Ski 1 / 1 / 120.00 | BIKE-01 0; SKI-02 0; TENT-01 1 |
+| Operators | `Where`, `Select`, `GroupBy`, `Count`, `Sum`, `OrderByDescending`, `ThenBy` (multi-stage) | `Where`, `Select`, `OrderBy`, `ThenBy` |
+
+Hand calculation for report 1 (standard policy): confirmed R3 Camping 1 × 25.00 × 14 = 350.00; R1 Bike 2 × 15.00 × 5 = 150.00; R6 Bike 1 × 15.00 × 8 = 120.00; R2 Ski 1 × 40.00 × 3 = 120.00. Bike = 150.00 + 120.00 = 270.00 with 2 bookings and 3 items. R5 is rejected (not enough TENT-01) and R4 is not eligible (15 days), so neither is counted. Total 740.00 = the confirmed total.
+
+Why the reports return `ImmutableArray`: each report is shown on screen **and** exported, so it is computed once and both consumers read the same snapshot. `ConfirmedQuotes` stays deferred because each caller enumerates it exactly once, right away.
+
+### Configured functions (Task 3, Member C)
+
+[src/Rental.Domain/Policies/PricingPolicies.cs](src/Rental.Domain/Policies/PricingPolicies.cs)
+
+```csharp
+public static readonly Func<int, Func<int, Func<RentalRequest, long>>> DaysDiscount =
+    minDays => percentOff => { /* checks the configuration once */ return request => ...; };
+
+public static readonly Func<RentalRequest, long> LongRentalDiscount = DaysDiscount(5)(15); // "discount"
+public static readonly Func<RentalRequest, long> WeeklyDiscount     = DaysDiscount(7)(25); // "weekly"
+```
+
+| Request (rate, qty, days) | Base | `discount` = DaysDiscount(5)(15) | `weekly` = DaysDiscount(7)(25) |
+|---|---|---|---|
+| R1 (1500, 2, 5) | 150.00 | 127.50 | **150.00** (5 < 7) |
+| R2 (4000, 1, 3) | 120.00 | 120.00 | 120.00 |
+| R3 (2500, 1, 14) | 350.00 | 297.50 | **262.50** |
+| R6 (1500, 1, 8) | 120.00 | 102.00 | **90.00** |
+| R5 (2500, 2, 1) | 50.00 | 50.00 | 50.00 |
+| Grand total (R4 excluded, 15 days) | 790.00 | 697.00 | **672.50** |
+| Confirmed (R5 rejected) | 740.00 | 647.00 | **622.50** |
+
+- **Currying:** `DaysDiscount` takes one argument per call. `DaysDiscount(5)` returns a `Func<int, Func<RentalRequest, long>>`, `DaysDiscount(5)(15)` returns the policy, and the policy takes the request.
+- **Partial application:** fixing `minDays` and `percentOff` gives a function that only needs the remaining input, the request. Currying is the shape (one argument at a time); partial application is the act of fixing some of them.
+- **No global:** the user picks a name, `FromName` returns the configured function, and `AppWorkflow` passes it into `RentalWorkflow.Run(rentals, policy, maxDays)`. Nothing static is switched; both configured functions exist side by side and are immutable.
+- **Same results as before for `discount`:** `× (100 − 15) / 100` is the old `× 85 / 100`; all A5 to A7 tests and demo 2 are unchanged. Integer division rounds down to a whole cent; on our data every result is exact.
+- **Configuration errors** (`minDays` 0, `percentOff` 101) are programmer errors in a constant, so they throw `ArgumentOutOfRangeException` when the numbers are fixed, at startup, never in the middle of pricing.
+
+### Deferred execution (Task 4)
+
+[src/Rental.Domain/Pipeline/Pricing.cs](src/Rental.Domain/Pipeline/Pricing.cs) (Member D)
+
+```csharp
+public static ImmutableArray<PricedRental> PriceAll(ImmutableArray<RentalRequest> eligible, Func<RentalRequest, long> policy) =>
+    PriceEach(eligible, policy).ToImmutableArray();          // the materialisation point
+
+public static IEnumerable<PricedRental> PriceEach(IEnumerable<RentalRequest> requests, Func<RentalRequest, long> policy)
+{
+    foreach (var request in requests)
+    {
+        yield return new PricedRental(request, policy(request));
+    }
+}
+```
+
+- **Before enumeration:** calling `PriceEach` runs nothing; the policy has not been called (`DeferredTests.PriceEach_Created_RunsNothingUntilEnumerated`).
+- **During iteration:** each `MoveNext` prices exactly one request (`PriceEach_Iteration_PricesOneRequestPerStep`: 1 call, then 2, and the current item is R2).
+- **Repeated enumeration:** enumerating the lazy sequence twice (`Sum` then `Count`) prices every request twice: 3 requests → **6** policy calls. The values are the same because policies are pure, but the work is repeated.
+- **After materialisation:** `PriceAll` runs the iterator once (**9** calls in total), and reading the snapshot again (`Sum`, `Length`) calls the policy **0** more times (still **9**). `BuildSummary` reads the quotes three times (`OrderBy`, `Sum`, `Length`), so the snapshot is what makes each request priced exactly once. The probe is a counting policy that exists only in the test; the real policies have no counter and no logging.
+- `PriceAll` keeps its A5 signature, so `RentalWorkflow.Run` and every older test are unchanged (`PolicyTests.PriceAll_InvokesPolicyOncePerRequest` still passes).
+
+[src/Rental.App/Io/DataFile.cs](src/Rental.App/Io/DataFile.cs) (Member A) uses the same idea for files: `StreamLines(open)` is a `yield` iterator with a `using` reader inside, so creating it opens nothing (`ResourceTests.StreamLines_NotEnumerated_DoesNotOpenTheSource`) and every new enumeration would open the source again. `ReadLines` calls `StreamLines(open).ToList()` inside its `try`: one read, the file closed right there, and a stable list for parsing.
+
+### Resources (Task 5)
+
+| Resource | Owner | Release point | Failure path | Early stop |
+|---|---|---|---|---|
+| `StreamReader` in `DataFile.StreamLines` | `StreamLines` (it creates the reader through `open` and disposes it) | End of its `using` scope: after the last line, when a read throws, or when the iterator is disposed | A read error propagates out of `ToList()`, the `using` disposes the reader, `ReadLines` turns the exception into `Fail(FileUnreadable)` (`ReadLines_ReaderFailsMidway_FailsAndDisposesReader`) | `foreach`/`First`/`Take` dispose the iterator, which runs the `using`'s `finally`; no more lines are read (`StreamLines_EarlyStop_DisposesReaderAndStopsReading`) |
+| `StreamWriter` in `DataFile.WriteLines` | `WriteLines` | End of its `using` scope, on success and on every exception | A missing folder fails at open (nothing created, `FileUnwritable`); a write error disposes the writer and returns `Fail(FileUnwritable)` (`WriteLines_WriterFails_FailsAndDisposesWriter`, `WriteLines_MissingFolder_FailsAndCreatesNothing`) | Not applicable: all lines are already built before the file is opened |
+| Native library `rental_native` | The .NET runtime (loaded once per process on the first call) | Unloaded with the process | Load errors become `Fail(NativeUnavailable)` in `NativeFeeAdapter` | Not applicable. No native memory is allocated and nothing is returned by pointer, so there is nothing to free |
+
+### Resource note (Task 6)
+
+- **What is materialised:** the file lines (`ReadLines` → `List`, inside the reader's scope), the parsed rentals and stock (immutable array / immutable dictionary), the priced quotes (`PriceAll` → `ImmutableArray`), the sorted summary, the booking lines, both reports, and the screen lines. These are all small: our CSVs have a few lines.
+- **Deferred queries and closures:** `ConfirmedQuotes()` holds the booking report only while `Sum` or `GroupBy` run over it; nothing stores the query. The `PriceEach` iterator holds the request array and the policy only until `PriceAll` finishes. `Stock.Items` is a deferred `OrderBy` that sorts again on each enumeration; it is read once per report or screen, and the stock has 3 items. The configured policies capture two `int`s, not data.
+- **Long-lived collections, caches, events:** none. The only statics are the policy delegates and constants. There are no caches and no event subscriptions, so nothing grows during a run.
+- **Design decision:** each file is read **once** into a snapshot inside the reader's `using`, so the handle is released before parsing starts and nothing later re-reads the file. Each report is computed once and shared between the screen and the export.
+- **Streaming vs snapshot:** streaming keeps memory small, but it keeps the file open for the whole processing and re-reads it on every enumeration. A snapshot holds all lines in memory but closes the file at once and gives stable, repeatable reads. We stream inside `DataFile` and snapshot at its boundary, because our files are small and are read by several steps.
+- No memory leak was found, so none is claimed to be fixed.
+
+### Native library (Tasks 7 to 9, Member A)
+
+- **Function:** `long long calculate_service_fee(int quantity, long long fee_per_item_cents)` in [native/rental_native.c](native/rental_native.c) (header [native/rental_native.h](native/rental_native.h)); C# binding `long CalculateServiceFee(int, long)` in [src/Rental.App/Native/NativeMethods.cs](src/Rental.App/Native/NativeMethods.cs) with `DllImport("rental_native", EntryPoint = "calculate_service_fee", CallingConvention = CallingConvention.Cdecl)`. `long long` ↔ `long` is 64-bit on every platform (C `long` would be 32-bit on Windows).
+- **Units and range:** money in integer cents, no rounding (integer multiply). `quantity` ≥ 0, `fee_per_item_cents` ≥ 0, product ≤ `LLONG_MAX`. Invalid input returns −1. [NativeFeeAdapter](src/Rental.App/Native/NativeFeeAdapter.cs) checks the same rules **before** the call and turns −1 into `Fail`.
+- **Used in a calculation:** `AppWorkflow.ServiceFee` passes the number of confirmed items and 100 cents per item; the result is `RunOutcome.ServiceFeeCents` and is added into `TotalDueCents`.
+- **Manual example:** 5 confirmed items (R3 1, R1 2, R2 1, R6 1) × 100 cents = 500 cents = 5.00; total due 740.00 + 5.00 = 745.00.
+- **Platform:** Windows x64. Compiler: MSVC `cl.exe` from the "x64 Native Tools Command Prompt for VS" ([A: exact `cl` version line]).
+- **Build:** `powershell -File native/build.ps1` → `native/rental_native.dll`. The DLL is committed, so a clean extraction runs without a compiler.
+- **Loading:** the runtime looks for `rental_native.dll` in the app folder; `Rental.App.csproj` copies `native/rental_native.dll` to `bin/Debug/net10.0/` on every build (`<None ... CopyToOutputDirectory="PreserveNewest">`). The test project gets it through its reference to `Rental.App`.
+- **Failures:** missing DLL, missing entry point, or wrong architecture become `Fail(NativeUnavailable)` with the OS loader text as a detail (demo 8, test `Calculate_MissingNativeLibrary_ReturnsFailure` with an injected `DllNotFoundException`).
+- **Difficulty and resolution:** [A: the real problem met while building/loading the DLL and how it was solved].
+- Linux/macOS are not the declared platform: there the runtime looks for `librental_native.so`/`.dylib`, which can be built from the same C source with `gcc -shared -fPIC -o librental_native.so native/rental_native.c` and placed next to the app.
+
+### A8 demo commands
+
+Run from the repository root: `dotnet run --project src/Rental.App -- <requests.csv> <standard|discount|weekly> <stock.csv> [revenue-report.csv]`. Exit 0 prints to standard output; exit 1 prints only to standard error.
+
+| # | Shows | Arguments | Expected (exit code) |
+|---|---|---|---|
+| 1 | Normal: both reports + native fee | `data/requests.csv standard data/stock.csv` | screen below (0) |
+| 2 | Configured function 1 | `data/requests.csv discount data/stock.csv` | quotes 297.50 / 127.50 / 120.00 / 102.00 / 50.00; grand 697.00; confirmed 647.00; fee 5.00; total due 652.00; revenue Camping 297.50, Bike 229.50, Ski 120.00; low stock as demo 1 (0) |
+| 3 | Configured function 2 (differs on the same data) | `data/requests.csv weekly data/stock.csv` | quotes 262.50 / 150.00 / 120.00 / 90.00 / 50.00; grand 672.50; confirmed 622.50; total due 627.50; revenue Camping 262.50, Bike 240.00, Ski 120.00 (0) |
+| 4 | Export | `data/requests.csv standard data/stock.csv revenue-report.csv` | demo 1 screen, an empty line, `Revenue report saved to revenue-report.csv`; the file is shown below (0) |
+| 5 | Export failure | `data/requests.csv standard data/stock.csv no-such-folder/revenue.csv` | `File problem [FileUnwritable]: Cannot write report file 'no-such-folder/revenue.csv': folder not found`, nothing on stdout (1) |
+| 6 | Report on lookup-missing data | `data/requests.csv standard data/stock-missing-item.csv` | R2 `REJECTED   [NoStockRecord]`; confirmed 620.00; fee 4.00; total due 624.00; `Stock left: BIKE-01=0, TENT-01=1`; revenue Camping 350.00, Bike 270.00 (no Ski); low stock BIKE-01 0, TENT-01 1 (0) |
+| 6b | Sold out | `data/requests.csv standard data/stock-sold-out.csv` | as 6, but R2 is `[NotEnoughStock] R2: not enough SKI-02 (requested 1, available 0)` and low stock also lists `SKI-02 0 left` (0) |
+| 7 | Empty dataset | `data/requests-empty.csv standard data/stock.csv` | screen below (0) |
+| 8 | Native load failure | `dotnet build`, delete `src/Rental.App/bin/Debug/net10.0/rental_native.dll`, then `dotnet run --no-build --project src/Rental.App -- data/requests.csv standard data/stock.csv` | `File problem [NativeUnavailable]: Native library 'rental_native' could not be loaded` + the OS loader message indented (1). `dotnet build` copies the DLL back |
+| 9 | Unknown policy | `data/requests.csv vip data/stock.csv` | `Rejected [UnknownPolicy]: Unknown policy 'vip'. Use 'standard', 'discount' or 'weekly'` (1) |
+| 10 | Invalid requests | `data/requests-invalid.csv standard data/stock.csv` | `Rejected [InvalidRequest]: ...` + the 4 row errors (1) |
+| 11 | Missing stock file | `data/requests.csv standard data/no-such-stock.csv` | `File problem [FileMissing]: Cannot load stock file 'data/no-such-stock.csv': file not found` (1) |
+| 12 | Malformed stock file | `data/requests.csv standard data/stock-malformed.csv` | `File problem [MalformedFile]: ...` + `Row 3: ...`, `Row 4: ...` (1) |
+
+`--no-build` matters in demo 8: a normal `dotnet run` builds first and copies the DLL back.
+
+**Demo 1** `data/requests.csv standard data/stock.csv` (exit 0)
+```
+Policy: standard
+R3   Cara           350.00
+R1   Anna           150.00
+R2   Ben            120.00
+R6   Finn           120.00
+R5   Eve             50.00
+Grand total: 790.00
+Count: 5
+
+Bookings:
+B-R3   confirmed      350.00
+B-R1   confirmed      150.00
+B-R2   confirmed      120.00
+B-R6   confirmed      120.00
+R5     REJECTED   [NotEnoughStock] R5: not enough TENT-01 (requested 2, available 1)
+Confirmed total: 740.00
+Service fee (native C): 5.00
+Total due: 745.00
+Stock left: BIKE-01=0, SKI-02=0, TENT-01=1
+
+Revenue by category:
+Camping    1 booking(s)   1 item(s)     350.00
+Bike       2 booking(s)   3 item(s)     270.00
+Ski        1 booking(s)   1 item(s)     120.00
+
+Low stock (left <= 1):
+BIKE-01    0 left
+SKI-02     0 left
+TENT-01    1 left
+```
+
+**Demo 4** file `revenue-report.csv` (ignored by git):
+```
+Category,Bookings,Items,RevenueCents
+Camping,1,1,35000
+Bike,2,3,27000
+Ski,1,1,12000
+```
+
+**Demo 7** `data/requests-empty.csv standard data/stock.csv` (exit 0)
+```
+Policy: standard
+No eligible rentals.
+Grand total: 0.00
+Count: 0
+
+Bookings:
+Confirmed total: 0.00
+Service fee (native C): 0.00
+Total due: 0.00
+Stock left: BIKE-01=3, SKI-02=1, TENT-01=2
+
+Revenue by category:
+No confirmed bookings.
+
+Low stock (left <= 1):
+SKI-02     1 left
+```
+
+### A8 requirement map
+
+| Brief | Where | Owner |
+|---|---|---|
+| Task 1: two extensions, used, receiver explained | `Extensions/BookingReportExtensions.ConfirmedQuotes` (used in `RentalReports.RevenueByCategory`, `AppWorkflow.ServiceFee`); `Extensions/RentalRequestExtensions.BaseCents` (used in `PricingPolicies.Standard`, `DaysDiscount`) | B, C |
+| Task 2: two reports with Where/Select/OrderBy+ThenBy/GroupBy/aggregate, one multi-stage, real data, separate from display/export | `Reports/RentalReports.cs`; display in `Display.Render`, export in `ReportCsv` + `DataFile.WriteLines` | B (D wires) |
+| Task 3: curried function + two partial applications, passed into the workflow | `PricingPolicies.DaysDiscount`, `LongRentalDiscount`, `WeeklyDiscount`; chosen by `FromName` and passed into `RentalWorkflow.Run` (no global) | C |
+| Task 4: `yield` workflow on project values, probe, materialisation | `Pricing.PriceEach` + `PriceAll` (`ToImmutableArray`); `DataFile.StreamLines` + `ReadLines` (`ToList`) | D, A |
+| Task 5: dispose safely, owner and release point, failure path, early stop | `DataFile.StreamLines` (`using` reader inside the iterator), `DataFile.WriteLines` (`using` writer) | A |
+| Task 6: resource note | [Resource note](#resource-note-task-6) | D (A's reader/writer facts) |
+| Integration: both reports run in the app, export, `Result` errors reused, pure core kept | `AppWorkflow.Execute` / `ExecuteAndExport`, `Display`, `Program` | D |
+| Task 7: small C library, deterministic, used in a calculation | `native/rental_native.c` `calculate_service_fee` → `RunOutcome.ServiceFeeCents`, `TotalDueCents` | A, D (total due) |
+| Task 8: source, header, build script, binding, binary location, adapter with validation and `Result` failures | `native/`, `Native/NativeMethods.cs`, `Rental.App.csproj` copy, `Native/NativeFeeAdapter.cs` | A |
+| Task 9: reproducible build/run doc, compiler + version, difficulty; real call test + failure test | [Native library](#native-library-tasks-7-to-9-member-a); `NativeInteropTests` | A |
+| 12+ tests, README, test table, members | [A8 tests](#a8-tests), [A8 members](#a8-members) | D (everyone sent rows) |
+
+### A8 tests
+
+Latest run, 2026-11-01, .NET SDK 10.0.114, from the repository root:
+
+```
+dotnet test
+Passed!  - Failed:     0, Passed:   103, Skipped:     0, Total:   103 - Rental.Tests.dll (net10.0)
+```
+
+All file tests use `TempFolder` (A); no test reads `data/`. New in A8: B 8, C 6 + 1 theory case, A 7 + 1, D 6 = **29** (+ the updated demo-1 screen test). 69 (A7) + 5 (A's native PR #16) + 29 = **103**.
+
+| Test | File (owner) | Case | Expected |
+|---|---|---|---|
+| `ConfirmedQuotes_SkipsRejectedLines_KeepsBookingOrder` | `ReportTests.cs` (B) | Extension 1 | R3, R1, R2, R6 (R5 rejected) |
+| `RevenueByCategory_SampleBooking_GroupsAndTotals` | `ReportTests.cs` (B) | Normal grouping and totals | Camping 1/1/35000, Bike 2/3/27000, Ski 1/1/12000 |
+| `RevenueByCategory_TiedRevenue_OrdersByCategoryName` | `ReportTests.cs` (B) | Deterministic order on ties | Equal revenue ordered by category name |
+| `RevenueByCategory_EmptyBooking_IsEmpty` | `ReportTests.cs` (B) | Empty dataset | Empty |
+| `RevenueByCategory_NoConfirmedBooking_IsEmpty` | `ReportTests.cs` (B) | No matches | Empty |
+| `LowStock_AfterSampleBooking_TiesOrderedByItemCode` | `ReportTests.cs` (B) | Normal + ties | BIKE-01 0, SKI-02 0, TENT-01 1 |
+| `LowStock_NothingAtOrBelowThreshold_IsEmpty` | `ReportTests.cs` (B) | No matches | Empty |
+| `LowStock_EmptyStockOrNegativeThreshold_IsEmpty` | `ReportTests.cs` (B) | Empty / invalid threshold | Empty |
+| `BaseCents_IsRateTimesQuantityTimesDays` | `CurryTests.cs` (C) | Extension 2 | R1 15000, R3 35000, `Standard(R3) == R3.BaseCents()` |
+| `DaysDiscount_ArgumentsArriveOneCallAtATime` | `CurryTests.cs` (C) | Currying step by step | `DaysDiscount(5)(10)`: 10 days 9000, 4 days 4000 |
+| `ConfiguredPolicies_SameRequests_DifferentPrices` | `CurryTests.cs` (C) | Same input, different result | R1 127.50 (`discount`) vs 150.00 (`weekly`) |
+| `ConfiguredPolicies_SampleDataset_DifferentGrandTotals` | `CurryTests.cs` (C) | Same dataset, different result | 697.00 vs 672.50 |
+| `WeeklyDiscount_SevenDayBoundary` | `CurryTests.cs` (C) | Boundary | 7 days discounted, 6 not |
+| `DaysDiscount_InvalidConfiguration_FailsWhenFixed` | `CurryTests.cs` (C) | Invalid configuration | `ArgumentOutOfRangeException` when the numbers are fixed |
+| `FromName_Known_IsSome` (+ `Weekly` case) | `LookupTests.cs` (C) | New policy name | `Weekly` → `Some` |
+| `StreamLines_NotEnumerated_DoesNotOpenTheSource` | `ResourceTests.cs` (A) | Deferred: nothing before enumeration | Source not opened |
+| `StreamLines_FullEnumeration_DisposesReader` | `ResourceTests.cs` (A) | Release on success | Probe reader disposed |
+| `StreamLines_EarlyStop_DisposesReaderAndStopsReading` | `ResourceTests.cs` (A) | Release on early stop | Disposed, no further reads |
+| `ReadLines_ReaderFailsMidway_FailsAndDisposesReader` | `ResourceTests.cs` (A) | Release on failure | `FileUnreadable`, disposed |
+| `WriteLines_Success_WritesEveryLineAndReleasesTheFile` | `ResourceTests.cs` (A) | Writer success | All lines written, exclusive open succeeds afterwards |
+| `WriteLines_WriterFails_FailsAndDisposesWriter` | `ResourceTests.cs` (A) | Writer failure | `FileUnwritable`, disposed |
+| `WriteLines_MissingFolder_FailsAndCreatesNothing` | `ResourceTests.cs` (A) | Missing folder | `FileUnwritable`, no file |
+| `Calculate_ValidInput_ReturnsCorrectFee` | `NativeInteropTests.cs` (A) | Real native call = manual value | 3 × 100 = 300 |
+| `CalculateWith_NativeSignalsInvalidInput_ReturnsFailure` | `NativeInteropTests.cs` (A) | −1 from C | `Fail(InvalidRequest)` |
+| `Calculate_MissingNativeLibrary_ReturnsFailure` | `NativeInteropTests.cs` (A) | Controlled load failure | `NativeUnavailable` |
+| `PriceEach_Created_RunsNothingUntilEnumerated` | `DeferredTests.cs` (D) | No processing before enumeration | 0 calls; `First()` is 15000; then 1 call |
+| `PriceEach_Iteration_PricesOneRequestPerStep` | `DeferredTests.cs` (D) | Processing during iteration | `MoveNext` → 1 call, `MoveNext` → 2 calls, current is R2 |
+| `PriceEach_RepeatedEnumeration_RepricesButSnapshotDoesNot` | `DeferredTests.cs` (D) | Materialisation, predictable reuse | Lazy `Sum` + `Count` → 6 calls; `PriceAll` → 9; snapshot `Sum` + `Length` → still 9; sum 62000 |
+| `ReportCsv_Revenue_HeaderThenOneLinePerCategoryInCents` | `DeferredTests.cs` (D) | Export lines are pure | Header + `Bike,2,3,22950`; empty → header only |
+| `Execute_SampleFiles_ProducesExpectedScreen` (updated) | `AppWorkflowTests.cs` (D) | Complete workflow, reports on screen | Demo 1 screen line by line, with `Total due` and both reports |
+| `ExecuteAndExport_SampleFiles_ReportsNativeFeeAndSavesRevenueCsv` | `AppWorkflowTests.cs` (D) | Complete workflow: reports + native call + export | `Ok`; fee 500 (real native call); total due 74500; low stock BIKE-01, SKI-02, TENT-01; `ExportedTo` = path; file = the 4 CSV lines |
+| `ExecuteAndExport_ExportFolderMissing_FailsAndLeavesNoReport` | `AppWorkflowTests.cs` (D) | Complete workflow failure keeps state consistent | `Fail(FileUnwritable)` with the exact message; no file; requests and stock files unchanged |
+
+The A7 workflow failures (`Execute_MissingStockFile_...`, `Execute_MalformedStockFile_...`, `Execute_UnknownPolicy_...`, `Execute_InvalidRequests_...`) still pass and show that invalid data never reaches a report.
+
+### A8 members
+
+| Member | Logic | Tests | Docs |
+|---|---|---|---|
+| A, Alimzhan Kabylkhanov | Native C library, `NativeMethods`, `NativeFeeAdapter` (`NativeUnavailable`); `DataFile.StreamLines` (`yield` + `using`), `ReadLines` snapshot, `WriteLines`; `ErrorCode.FileUnwritable`, `NativeUnavailable` | `ResourceTests.cs` (7), `NativeInteropTests.cs` | Native library, reader/writer facts for Resources |
+| B, Daniyar Azizayev | `ConfirmedQuotes()` extension; `RentalReports.RevenueByCategory`, `LowStock` | `ReportTests.cs` (8) | Reports specification and hand calculation |
+| C, Mukhamejan Abdikerim | `BaseCents()` extension; curried `DaysDiscount`, `LongRentalDiscount`, `WeeklyDiscount`, policy name `weekly` | `CurryTests.cs` (6), `LookupTests` (+1 case) | Configured functions |
+| D, Mereikhan Sholanbayev | `Pricing.PriceEach` (`yield`) + `PriceAll` materialisation; `AppWorkflow` (`RunOutcome` with reports and `TotalDueCents`, `ExecuteAndExport`); `ReportCsv`; `Display`; `Program` export argument | `DeferredTests.cs` (4), `AppWorkflowTests.cs` (+2, demo-1 screen updated) | This section: workflow, deferred execution, resources, resource note, demos, requirement map, test table |
+
+Build and run: see [Build, run, test](#build-run-test). Working directory = repository root; .NET SDK 10 (`global.json`); declared platform Windows x64 (the native DLL is committed, MSVC is only needed to rebuild it).
+
 ## A5 requirement map
 
 | Assignment task | File | Method |
@@ -732,9 +1058,12 @@ All 69 tests (A5, A6 and A7) pass on 2026-10-25; see [A7 tests](#a7-tests).
 ## Layout
 
 ```
-src/Rental.Domain/   pure core: models, pipeline stages, policies, states, Results/ (no Console, no files)
-src/Rental.App/      console app = the boundary: Io/ (DataFile, parsers), AppWorkflow (the chain),
-                     Display (screen lines), Program (arguments, the one switch, printing)
+src/Rental.Domain/   pure core: models, pipeline stages, policies, states, Results/, Extensions/, Reports/
+                     (no Console, no files)
+src/Rental.App/      console app = the boundary: Io/ (DataFile, parsers), Native/ (C interop adapter),
+                     AppWorkflow (the chain), Display (screen lines), ReportCsv (export lines),
+                     Program (arguments, the one switch, printing)
+native/              C source, header, build script and the committed Windows x64 DLL
 tests/Rental.Tests/  xUnit tests (TestData/ for controlled sample files)
 data/                sample input used by the demos
 ```
