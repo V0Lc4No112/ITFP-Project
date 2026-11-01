@@ -54,24 +54,30 @@ public static class NativeFeeAdapter
         }
         catch (DllNotFoundException ex)
         {
-            return Result.Fail<long>(
-                new Error(
-                    ErrorCode.FileMissing,
-                    $"Native library could not be loaded: {ex.Message}"));
+            return Unavailable(
+                "Native library 'rental_native' could not be loaded",
+                ex);
         }
         catch (EntryPointNotFoundException ex)
         {
-            return Result.Fail<long>(
-                new Error(
-                    ErrorCode.FileUnreadable,
-                    $"Native function could not be found: {ex.Message}"));
+            return Unavailable(
+                "Native function 'calculate_service_fee' was not found",
+                ex);
         }
         catch (BadImageFormatException ex)
         {
-            return Result.Fail<long>(
-                new Error(
-                    ErrorCode.FileUnreadable,
-                    $"Native library has an incompatible format: {ex.Message}"));
+            return Unavailable(
+                "Native library 'rental_native' does not match this process (x64 expected)",
+                ex);
         }
     }
+
+    private static Result<long> Unavailable(
+        string message,
+        Exception ex) =>
+        Result.Fail<long>(
+            new Error(
+                ErrorCode.NativeUnavailable,
+                message,
+                [ex.Message]));
 }

@@ -7,6 +7,23 @@ namespace Rental.Tests;
 
 public class NativeInteropTests
 {
+    
+[Fact]
+public void CalculateWith_NativeSignalsInvalidInput_ReturnsFailure()
+{
+    var result = NativeFeeAdapter.CalculateWith(
+        3,
+        100,
+        (_, _) => -1);
+
+    var fail = Assert.IsType<Result<long>.Fail>(result);
+
+    Assert.Equal(ErrorCode.InvalidRequest, fail.Error.Code);
+    Assert.Equal(
+        "Native service fee calculation failed",
+        fail.Error.Message);
+}
+
     [Fact]
     public void Calculate_ValidInput_ReturnsCorrectFee()
     {
@@ -50,9 +67,12 @@ public void Calculate_MissingNativeLibrary_ReturnsFailure()
 
     var failure = Assert.IsType<Result<long>.Fail>(result);
 
-    Assert.Equal(
-        ErrorCode.FileMissing,
-        failure.Error.Code);
+   Assert.Equal(ErrorCode.NativeUnavailable, failure.Error.Code);
+Assert.Equal(
+    "Native library 'rental_native' could not be loaded",
+    failure.Error.Message);
+Assert.True(failure.Error.IsOperational);
+Assert.NotEmpty(failure.Error.Details);
 }
 
 }
