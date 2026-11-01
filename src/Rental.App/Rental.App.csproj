@@ -10,5 +10,12 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+  
+  <ItemGroup>
+    <None Include="..\..\native\rental_native.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          Link="rental_native.dll" />
+  </ItemGroup>
+
 
 </Project>

@@ -58,7 +58,8 @@ public class AppWorkflowTests
             "B-R6   confirmed      120.00",
             "R5     REJECTED   [NotEnoughStock] R5: not enough TENT-01 (requested 2, available 1)",
             "Confirmed total: 740.00",
-            "Stock left: BIKE-01=0, SKI-02=0, TENT-01=1",
+            "Service fee (native C): 5.00",
+        "Stock left: BIKE-01=0, SKI-02=0, TENT-01=1",
         }, ok.Value);
     }
 
@@ -122,4 +123,26 @@ public class AppWorkflowTests
         Assert.Equal(ErrorCode.InvalidRequest, fail.Error.Code);
         Assert.Equal(new[] { "Row 2: Days must be >= 1 (was -2)" }, fail.Error.Details);
     }
+    [Fact]
+    public void Execute_UsesNativeLibraryToCalculateServiceFee()
+    {
+        using var temp = new TempFolder();
+
+        string requests = temp.Write("requests.csv", RequestLines);
+        string stock = temp.Write("stock.csv", StockLines);
+
+        var result = AppWorkflow.Execute(
+            requests,
+            "standard",
+            stock);
+
+        var success = Assert.IsType<Result<RunOutcome>.Ok>(result);
+
+        Assert.Equal(500L, success.Value.ServiceFeeCents);
+
+        Assert.Equal(74000L,
+            success.Value.Booking.ConfirmedTotalCents);
+}
+
+
 }
