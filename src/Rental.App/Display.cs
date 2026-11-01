@@ -42,6 +42,7 @@ public static class Display
             });
         }
         lines.Add($"Confirmed total: {FormatCents(report.ConfirmedTotalCents)}");
+        lines.Add($"Service fee (native C): {FormatCents(outcome.ServiceFeeCents)}");
         lines.Add($"Stock left: {FormatStock(report.RemainingStock)}");
 
         return lines.ToImmutable();
