@@ -1,3 +1,4 @@
+
 using Rental.Domain.Models;
 using Rental.Domain.Policies;
 using Rental.Domain.Results;
@@ -52,6 +53,7 @@ public class LookupTests
     [Theory]
     [InlineData("standard")]
     [InlineData("DISCOUNT")]
+    [InlineData("Weekly")]
     public void FromName_Known_IsSome(string name)
     {
         Assert.IsType<Option<Func<RentalRequest, long>>.Some>(PricingPolicies.FromName(name));

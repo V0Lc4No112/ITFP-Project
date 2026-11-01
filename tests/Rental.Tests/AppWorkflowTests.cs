@@ -59,7 +59,7 @@ public class AppWorkflowTests
             "R5     REJECTED   [NotEnoughStock] R5: not enough TENT-01 (requested 2, available 1)",
             "Confirmed total: 740.00",
             "Service fee (native C): 5.00",
-        "Stock left: BIKE-01=0, SKI-02=0, TENT-01=1",
+            "Stock left: BIKE-01=0, SKI-02=0, TENT-01=1",
         }, ok.Value);
     }
 
@@ -103,10 +103,10 @@ public class AppWorkflowTests
 
         var result = AppWorkflow.Execute(requests, "vip", stock);
 
-        // The stock file is missing too, so FileMissing here would mean the stock step ran.
+    
         var fail = Assert.IsType<Result<RunOutcome>.Fail>(result);
         Assert.Equal(ErrorCode.UnknownPolicy, fail.Error.Code);
-        Assert.Equal("Unknown policy 'vip'. Use 'standard' or 'discount'", fail.Error.Message);
+        Assert.Equal("Unknown policy 'vip'. Use 'standard', 'discount' or 'weekly'", fail.Error.Message);
     }
 
     [Fact]
@@ -116,13 +116,12 @@ public class AppWorkflowTests
         string requests = temp.Write("requests.csv", RequestParser.Header, "X1,Gus,BIKE-01,Bike,1500,1,-2,false");
         string stock = temp.PathOf("no-such-stock.csv");
 
-        var result = AppWorkflow.Execute(requests, "vip", stock);
-
-        // The policy and the stock are wrong as well; only the first failure is reported.
+        var result = AppWorkflow.Execute(requests, "vip", stock);.
         var fail = Assert.IsType<Result<RunOutcome>.Fail>(result);
         Assert.Equal(ErrorCode.InvalidRequest, fail.Error.Code);
         Assert.Equal(new[] { "Row 2: Days must be >= 1 (was -2)" }, fail.Error.Details);
     }
+
     [Fact]
     public void Execute_UsesNativeLibraryToCalculateServiceFee()
     {
@@ -139,10 +138,6 @@ public class AppWorkflowTests
         var success = Assert.IsType<Result<RunOutcome>.Ok>(result);
 
         Assert.Equal(500L, success.Value.ServiceFeeCents);
-
-        Assert.Equal(74000L,
-            success.Value.Booking.ConfirmedTotalCents);
-}
-
-
+        Assert.Equal(74000L, success.Value.Booking.ConfirmedTotalCents);
+    }
 }

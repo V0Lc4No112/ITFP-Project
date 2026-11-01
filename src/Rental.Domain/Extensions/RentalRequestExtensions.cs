@@ -1,10 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿
+using Rental.Domain.Models;
 
-namespace Rental.Domain.Extensions
+namespace Rental.Domain.Extensions;
+
+public static class RentalRequestExtensions
 {
-    internal class RentalRequestExtensions
-    {
-    }
+    public static long BaseCents(this RentalRequest request) =>
+        request.DailyRateCents * request.Quantity * request.Days;
 }

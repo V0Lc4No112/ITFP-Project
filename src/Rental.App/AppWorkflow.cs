@@ -28,7 +28,7 @@ public static class AppWorkflow
                 PricingPolicies.FromName(policyName)
                     .ToResult(() => new Error(
                         ErrorCode.UnknownPolicy,
-                        $"Unknown policy '{policyName}'. Use 'standard' or 'discount'"))
+                        $"Unknown policy '{policyName}'. Use 'standard', 'discount' or 'weekly'"))
                     .Map(policy =>
                         RentalWorkflow.Run(
                             rentals,
