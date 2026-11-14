@@ -25,6 +25,9 @@ public sealed class Stock
     internal Stock Reserve(string itemCode, int quantity) =>
         new(_available.SetItem(itemCode, _available[itemCode] - quantity));
 
+    internal Stock Release(string itemCode, int quantity) =>
+        new(_available.SetItem(itemCode, _available[itemCode] + quantity));
+
     public IEnumerable<KeyValuePair<string, int>> Items =>
         _available.OrderBy(item => item.Key, StringComparer.Ordinal);
 

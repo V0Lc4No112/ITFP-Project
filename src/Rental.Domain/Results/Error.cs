@@ -13,6 +13,11 @@ public enum ErrorCode
     MalformedFile,
     FileUnwritable,
     NativeUnavailable,
+    UnknownBooking,
+    UnknownItem,
+    UnknownCustomer,
+    InvalidTransition,
+    InvalidEvent,
 }
 
 public sealed record Error
