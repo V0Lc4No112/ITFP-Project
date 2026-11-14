@@ -39,4 +39,31 @@ public class StateTests
         Assert.Equal(Option.Some(3), stock.Available("BIKE-01"));
         Assert.IsType<Option<int>.None>(stock.Available("SKI-02"));
     }
+
+    [Fact]
+    public void Release_AddsQuantity_AndLeavesOriginalStockUnchanged()
+    {
+        var stock = Assert.IsType<Validation<Stock>.Valid>(Stock.Create([("BIKE-01", 1), ("SKI-02", 0)])).Value;
+
+        var released = stock.Release("BIKE-01", 2);
+
+        Assert.Equal(Option.Some(3), released.Available("BIKE-01"));
+        Assert.Equal(Option.Some(0), released.Available("SKI-02"));
+        Assert.Equal(Option.Some(1), stock.Available("BIKE-01"));
+    }
+
+    [Fact]
+    public void NewErrorCodes_AreDomainFailures_NotOperational()
+    {
+        ErrorCode[] codes =
+        [
+            ErrorCode.UnknownBooking,
+            ErrorCode.UnknownItem,
+            ErrorCode.UnknownCustomer,
+            ErrorCode.InvalidTransition,
+            ErrorCode.InvalidEvent,
+        ];
+
+        Assert.All(codes, code => Assert.False(new Error(code, "test").IsOperational));
+    }
 }
