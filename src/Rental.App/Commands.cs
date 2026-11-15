@@ -21,6 +21,13 @@ public abstract record Command
     /// <summary>W3 (Member A): add delivered items to stock.</summary>
     public sealed record Restock(string Stock, string Deliveries, Option<string> SaveDir) : Command;
 
+    /// <summary>W4 (Member B): one customer's invoice from the bookings file.</summary>
+    public sealed record Invoice(string Bookings, string Customer) : Command;
+
+    /// <summary>W5 (Member C): return equipment, late and damage fees.</summary>
+    public sealed record Return(
+        string Bookings, string Returns, string Stock, Option<string> SaveDir) : Command;
+
     /// <summary>W6: cancel confirmed bookings with a refund tier.</summary>
     public sealed record Cancel(
         string Bookings, string Cancellations, string Stock, Option<string> SaveDir) : Command;
@@ -35,6 +42,8 @@ public static class Commands
         "dotnet run --project src/Rental.App -- quote   <requests.csv> <standard|discount|weekly>",
         "dotnet run --project src/Rental.App -- book    <requests.csv> <policy> <stock.csv> [report.csv] [--save <folder>]",
         "dotnet run --project src/Rental.App -- restock <stock.csv> <deliveries.csv> [--save <folder>]",
+        "dotnet run --project src/Rental.App -- invoice <bookings.csv> <customer>",
+        "dotnet run --project src/Rental.App -- return  <bookings.csv> <returns.csv> <stock.csv> [--save <folder>]",
         "dotnet run --project src/Rental.App -- cancel  <bookings.csv> <cancellations.csv> <stock.csv> [--save <folder>]",
         "dotnet run --project src/Rental.App -- <requests.csv> <policy> <stock.csv> [report.csv]   (A5-A8 form, same as book)",
     ];
@@ -67,12 +76,11 @@ public static class Commands
             ("book", 4, _) => Ok(new Command.Book(a[1], a[2], a[3], Option.None<string>(), save)),
             ("book", 5, _) => Ok(new Command.Book(a[1], a[2], a[3], Option.Some(a[4]), save)),
             ("restock", 3, _) => Ok(new Command.Restock(a[1], a[2], save)),
+            ("invoice", 3, false) => Ok(new Command.Invoice(a[1], a[2])),
+            ("return", 4, _) => Ok(new Command.Return(a[1], a[2], a[3], save)),
             ("cancel", 4, _) => Ok(new Command.Cancel(a[1], a[2], a[3], save)),
-            ("quote" or "book" or "restock" or "cancel", _, _) =>
+            ("quote" or "book" or "restock" or "invoice" or "return" or "cancel", _, _) =>
                 UsageError<Command>($"Wrong arguments for '{a[0]}'"),
-            // Reserved for B (invoice) and C (return) so they are never read as an A5-A8 file name.
-            ("invoice" or "return", _, _) =>
-                UsageError<Command>($"Command '{a[0]}' is not in this build yet"),
             (_, 3, false) => Ok(new Command.Book(a[0], a[1], a[2], Option.None<string>(), save)),
             (_, 4, false) => Ok(new Command.Book(a[0], a[1], a[2], Option.Some(a[3]), save)),
             ("", _, _) => UsageError<Command>("No command given"),

@@ -21,6 +21,10 @@ public static class CommandRunner
             Command.Book b => AppWorkflow.Book(b.Requests, b.Policy, b.Stock, b.ReportPath, b.SaveDir)
                 .Map(Display.Render),
             Command.Restock r => RunRestock(r),
+            Command.Invoice i => InvoiceWorkflow.Run(i.Bookings, i.Customer)
+                .Map(InvoiceScreen.Render),
+            Command.Return r => ReturnWorkflow.Run(r.Bookings, r.Returns, r.Stock, r.SaveDir)
+                .Map(ReturnScreen.Render),
             Command.Cancel c => CancelWorkflow.Run(c.Bookings, c.Cancellations, c.Stock, c.SaveDir)
                 .Map(CancelScreen.Render),
             _ => throw new InvalidOperationException($"Unknown command: {command.GetType().Name}"),
