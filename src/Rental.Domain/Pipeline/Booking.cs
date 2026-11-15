@@ -46,4 +46,15 @@ public static class Booking
 
         return new BookingReport(lines.MoveToImmutable(), current, confirmedTotal);
     }
+
+    /// <summary>
+    /// The bookings worth saving (Member D, final): every confirmed line, in report order.
+    /// Rejected quotes stay <c>Quoted</c> and are never saved.
+    /// </summary>
+    public static ImmutableArray<BookingState> ConfirmedBookings(BookingReport report) =>
+        report.Lines
+            .Select(line => line.Result)
+            .OfType<Result<Reservation>.Ok>()
+            .Select(ok => (BookingState)ok.Value.Booking)
+            .ToImmutableArray();
 }
