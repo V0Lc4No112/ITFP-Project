@@ -25,6 +25,22 @@ public sealed class Stock
             ? Option.Some(available)
             : Option.None<int>();
 
+    /// <summary>
+    /// Checks that <paramref name="quantity"/> items can go back into stock: the item must be listed
+    /// (UnknownItem) and the new amount must stay within <see cref="MaxPerItem"/> (InvalidEvent), so a
+    /// saved stock file can always be loaded again. Used by restock, return and cancel.
+    /// </summary>
+    public Result<int> CanAdd(string itemCode, int quantity) =>
+        Available(itemCode)
+            .ToResult(() => new Error(
+                ErrorCode.UnknownItem,
+                $"{itemCode}: not in the stock list, cannot put the items back"))
+            .Bind(available => (long)available + quantity <= MaxPerItem
+                ? Result.Ok(available + quantity)
+                : Result.Fail<int>(new Error(
+                    ErrorCode.InvalidEvent,
+                    $"{itemCode}: stock would exceed {MaxPerItem} (have {available}, adding {quantity})")));
+
     internal Stock Reserve(string itemCode, int quantity) =>
         new(_available.SetItem(itemCode, checked(_available[itemCode] - quantity)));
 

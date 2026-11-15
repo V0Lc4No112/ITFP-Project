@@ -153,6 +153,12 @@ public static class BookingFile
                         errors.Add($"Row {rowNumber}: {reason}");
                     continue;
 
+                // Policies only give discounts, so a stored total above the full price is impossible.
+                case Validation<ValidatedRental>.Valid valid
+                    when totalCents > valid.Value.Request.DailyRateCents * valid.Value.Request.Quantity * valid.Value.Request.Days:
+                    errors.Add($"Row {rowNumber}: TotalCents must be <= DailyRateCents x Quantity x Days (was {totalCents})");
+                    continue;
+
                 case Validation<ValidatedRental>.Valid valid:
                     var quote = new PricedRental(
                         valid.Value.Request,
