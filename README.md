@@ -19,7 +19,7 @@ Counter staff at a small rental shop who need a quick, repeatable quote for a ba
 
 ## Requirements
 
-- .NET SDK 10 (pinned in `global.json`, rolls forward to the latest 10.0.x feature band). Final run checked with `dotnet --version` = `[D: paste your dotnet --version]`.
+- .NET SDK 10 (pinned in `global.json`, rolls forward to the latest 10.0.x feature band). Final run checked with `dotnet --version` = `10.0.100`.
 - Declared platform: **Windows x64**. The service fee calls the committed native library `native/rental_native.dll`; on Linux/macOS build `librental_native.so` from the same C source first (see [Native library](#native-library-tasks-7-to-9-member-a)), otherwise `book` fails with `NativeUnavailable`.
 
 ## Submission
