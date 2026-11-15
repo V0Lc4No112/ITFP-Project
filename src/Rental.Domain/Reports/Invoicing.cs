@@ -31,7 +31,21 @@ public static class Invoicing
         Func<bool, Func<long, long>> discountFor) =>
         FindCustomer(bookings, customer)
             .ToResult(() => new Error(ErrorCode.UnknownCustomer, $"No bookings for customer '{customer.Trim()}'"))
+            .Bind(SameMembership)
             .Map(mine => Build(mine, discountFor));
+
+    /// <summary>
+    /// Membership belongs to the customer, not to a row: every booking of the customer must carry the
+    /// same IsMember flag. Conflicting flags are rejected instead of trusting whichever row comes first.
+    /// </summary>
+    private static Result<ImmutableArray<BookingState>> SameMembership(ImmutableArray<BookingState> mine) =>
+        mine.Select(b => b.QuoteOf().Request.IsMember).Distinct().Count() == 1
+            ? Result.Ok(mine)
+            : Result.Fail<ImmutableArray<BookingState>>(new Error(
+                ErrorCode.InvalidRequest,
+                $"Customer '{mine[0].QuoteOf().Request.Customer}' has conflicting membership flags; fix bookings.csv",
+                mine.Select(b => $"{b.IdOf()}: IsMember={b.QuoteOf().Request.IsMember.ToString().ToLowerInvariant()}")
+                    .ToImmutableArray()));
 
     private static Option<ImmutableArray<BookingState>> FindCustomer(IReadOnlyList<BookingState> bookings, string customer)
     {

@@ -41,11 +41,14 @@ public static class BookingTransitions
     {
         var request = quoted.Quote.Request;
 
-        return stock.Available(request.ItemCode)
+        // A Quoted state can be built by hand, so the transition re-checks the same rules as
+        // ValidatedRental.Create (e.g. Quantity -2 would otherwise ADD stock).
+        return Valid(request)
+            .Bind(_ => stock.Available(request.ItemCode)
             .ToResult(() => new Error(
                 ErrorCode.NoStockRecord,
                 $"{request.Id}: no stock record for {request.ItemCode}"))
-            .Bind(available => EnsureEnough(request, available))
+            .Bind(available => EnsureEnough(request, available)))
             .Map(_ => new Reservation(
                 new BookingState.Confirmed(
                     quoted.Quote,
@@ -54,6 +57,25 @@ public static class BookingTransitions
                     request.ItemCode,
                     request.Quantity)));
     }
+
+    private static Result<RentalRequest> Valid(RentalRequest request) =>
+        ValidatedRental.Create(request) switch
+        {
+            Validation<ValidatedRental>.Valid ok => Result.Ok(ok.Value.Request),
+            Validation<ValidatedRental>.Invalid bad => Result.Fail<RentalRequest>(new Error(
+                ErrorCode.InvalidRequest,
+                $"{request.Id}: request is not valid",
+                bad.Reasons)),
+            _ => throw new InvalidOperationException("Unexpected validation result"),
+        };
+
+    /// <summary>An event must name the booking it is applied to (shared by Return and Cancel).</summary>
+    internal static Result<string> SameBooking(string bookingId, string eventBookingId) =>
+        string.Equals(bookingId, eventBookingId, StringComparison.Ordinal)
+            ? Result.Ok(bookingId)
+            : Result.Fail<string>(new Error(
+                ErrorCode.InvalidEvent,
+                $"{bookingId}: event is for booking '{eventBookingId}', not this one"));
 
     private static Result<int> EnsureEnough(
         RentalRequest request,
@@ -73,7 +95,8 @@ public static class BookingTransitions
     public static Result<ReturnResult> Return(BookingState state, ReturnEvent ev) =>
         state switch
         {
-            BookingState.Confirmed confirmed => CheckEvent(confirmed, ev)
+            BookingState.Confirmed confirmed => SameBooking(confirmed.BookingId, ev.BookingId)
+                .Bind(_ => CheckEvent(confirmed, ev))
                 .Map(_ => new ReturnResult(
                     new BookingState.Returned(confirmed.Quote, confirmed.BookingId),
                     Math.Max(0, ev.DaysUsed - confirmed.Quote.Request.Days),

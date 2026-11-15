@@ -22,6 +22,11 @@ public static class Restocking
             new Error(
                 ErrorCode.UnknownItem,
                 $"Unknown item: {delivery.ItemCode}"))
+            .Bind(available => (long)available + delivery.Added <= Stock.MaxPerItem
+                ? Result.Ok(available)
+                : Result.Fail<int>(new Error(
+                    ErrorCode.InvalidEvent,
+                    $"{delivery.ItemCode}: stock would exceed {Stock.MaxPerItem} (have {available}, adding {delivery.Added})")))
             .Map(_ => stock.Release(delivery.ItemCode, delivery.Added));
     }
 

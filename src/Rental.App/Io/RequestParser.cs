@@ -41,6 +41,8 @@ public static class RequestParser
             return new ParseOutcome(valid.ToImmutable(), errors.ToImmutable());
         }
 
+        var seenIds = new HashSet<string>(StringComparer.Ordinal);
+
         for (int i = 1; i < lines.Count; i++)
         {
             int rowNumber = i + 1;
@@ -134,6 +136,12 @@ public static class RequestParser
             
             switch (ValidatedRental.Create(candidate))
             {
+                // Booking ids are "B-" + request id, so a repeated id would save a bookings file
+                // that BookingFile cannot load again. Reject it here, before anything is booked.
+                case Validation<ValidatedRental>.Valid ok when !seenIds.Add(ok.Value.Request.Id):
+                    errors.Add($"Row {rowNumber}: Id {ok.Value.Request.Id} is listed twice");
+                    break;
+
                 case Validation<ValidatedRental>.Valid ok:
                     valid.Add(ok.Value);
                     break;
@@ -175,4 +183,4 @@ public static Result<ImmutableArray<ValidatedRental>> Load(string path) =>
                 )
         });
 
-}
+}
