@@ -6,7 +6,18 @@ public abstract record BookingState
 {
     private BookingState() { }
 
-    public sealed record Quoted(PricedRental Quote) : BookingState;
+    public sealed record Quoted(
+        PricedRental Quote) : BookingState;
 
-    public sealed record Confirmed(PricedRental Quote, string BookingId) : BookingState;
+    public sealed record Confirmed(
+        PricedRental Quote,
+        string BookingId) : BookingState;
+
+    public sealed record Returned(
+        PricedRental Quote,
+        string BookingId) : BookingState;
+
+    public sealed record Cancelled(
+        PricedRental Quote,
+        string BookingId) : BookingState;
 }
