@@ -23,6 +23,9 @@ public sealed record RunOutcome(
 
     /// <summary>Where the revenue report was saved, when the run exported it.</summary>
     public Option<string> ExportedTo { get; init; } = Option.None<string>();
+
+    /// <summary>The folder where <c>book --save</c> wrote bookings.csv and stock.csv.</summary>
+    public Option<string> SavedTo { get; init; } = Option.None<string>();
 }
 
 public static class AppWorkflow
@@ -37,12 +40,7 @@ public static class AppWorkflow
     /// native fee (Bind: can fail), then the outcome with both reports computed once (Map).
     /// </summary>
     public static Result<RunOutcome> Execute(string requestsPath, string policyName, string stockPath) =>
-        RequestParser.Load(requestsPath)
-            .Bind(rentals => PricingPolicies.FromName(policyName)
-                .ToResult(() => new Error(
-                    ErrorCode.UnknownPolicy,
-                    $"Unknown policy '{policyName}'. Use 'standard', 'discount' or 'weekly'"))
-                .Map(policy => RentalWorkflow.Run(rentals, policy, RentalWorkflow.DefaultMaxDays)))
+        Quote(requestsPath, policyName)
             .Bind(summary => StockParser.Load(stockPath)
                 .Map(stock => Booking.ConfirmAll(summary, stock))
                 .Bind(booking => ServiceFee(booking)
@@ -53,6 +51,37 @@ public static class AppWorkflow
                         fee,
                         RentalReports.RevenueByCategory(booking),
                         RentalReports.LowStock(booking.RemainingStock, LowStockThreshold)))));
+
+    /// <summary>
+    /// W1 quote: load requests, pick the policy (Option lookup), run the A5 pipeline. No stock is read.
+    /// <see cref="Execute"/> starts with this same chain.
+    /// </summary>
+    public static Result<QuoteSummary> Quote(string requestsPath, string policyName) =>
+        RequestParser.Load(requestsPath)
+            .Bind(rentals => PricingPolicies.FromName(policyName)
+                .ToResult(() => new Error(
+                    ErrorCode.UnknownPolicy,
+                    $"Unknown policy '{policyName}'. Use 'standard', 'discount' or 'weekly'"))
+                .Map(policy => RentalWorkflow.Run(rentals, policy, RentalWorkflow.DefaultMaxDays)));
+
+    /// <summary>
+    /// W2 book: <see cref="Execute"/>, then the optional revenue export, then the optional save of the
+    /// confirmed bookings and the stock left (A's <see cref="SaveFolder.SaveAll"/>). Any failed step fails the run.
+    /// </summary>
+    public static Result<RunOutcome> Book(
+        string requestsPath, string policyName, string stockPath, Option<string> reportPath, Option<string> saveDir) =>
+        (reportPath switch
+        {
+            Option<string>.Some report => ExecuteAndExport(requestsPath, policyName, stockPath, report.Value),
+            _ => Execute(requestsPath, policyName, stockPath),
+        })
+        .Bind(outcome => saveDir switch
+        {
+            Option<string>.Some dir => SaveFolder
+                .SaveAll(dir.Value, Booking.ConfirmedBookings(outcome.Booking), outcome.Booking.RemainingStock)
+                .Map(saved => outcome with { SavedTo = Option.Some(saved) }),
+            _ => Result.Ok(outcome),
+        });
 
     /// <summary>
     /// <see cref="Execute"/>, then saves report 1 as CSV. If saving fails, the whole run fails and nothing is

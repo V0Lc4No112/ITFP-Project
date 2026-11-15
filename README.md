@@ -44,6 +44,44 @@ dotnet test --filter Confirm_Twice
 
 Usage: `dotnet run --project src/Rental.App -- <requests.csv> <standard|discount|weekly> <stock.csv> [revenue-report.csv]`. Since A6 the stock file is required; since A8 an optional 4th argument saves the revenue report as CSV. Wrong arguments print the usage. Since A7 every failure (invalid rows, unknown policy, missing or malformed file) prints `Rejected [Code]: ...` or `File problem [Code]: ...` on standard error and exits with code 1; nothing is printed on standard output. The expected screens are in [A8 demo commands](#a8-demo-commands) (A7 screens: [A7 demo commands](#a7-demo-commands-task-5), now followed by the A8 lines).
 
+### Final commands (workflows)
+
+Since the final project the first argument names the workflow. The A5-A8 form above still works and means `book`.
+
+```
+dotnet run --project src/Rental.App -- quote   data/requests.csv weekly
+dotnet run --project src/Rental.App -- book    data/requests.csv standard data/stock.csv --save out
+dotnet run --project src/Rental.App -- restock data/stock.csv data/deliveries.csv
+dotnet run --project src/Rental.App -- cancel  data/bookings.csv data/cancellations.csv data/stock-booked.csv
+dotnet run --project src/Rental.App -- cancel  data/bookings.csv data/cancellations-malformed.csv data/stock-booked.csv
+```
+
+`--save <folder>` is optional and must come last; the folder must exist (`mkdir out` first), otherwise the run fails with `FileUnwritable`. It writes `bookings.csv` and `stock.csv` (restock writes `stock.csv` only). A wrong or unknown command prints `Rejected [InvalidRequest]` and the usage lines, exit code 1.
+
+| # | Command | Owner | Rule | Expected with the sample files |
+|---|---|---|---|---|
+| W1 | `quote` | D | eligibility (max 14 days) + pricing policy (`Func`) | weekly: R3 262.50, R1 150.00, R2 120.00, R6 90.00, R5 50.00; grand total 672.50 |
+| W2 | `book [report.csv] [--save <folder>]` | D | confirm each quote against stock | 740.00 confirmed, R5 rejected, total due 745.00; `--save out` writes `out/bookings.csv` (B-R3, B-R1, B-R2, B-R6, = first 4 rows of `data/bookings.csv`) and `out/stock.csv` (= `data/stock-booked.csv`) |
+| W3 | `restock [--save <folder>]` | A | added ≥ 1 (`InvalidEvent`), item must exist (`UnknownItem`) | 2 accepted, 2 rejected (BIKE-01 +0, KAYAK-01) |
+| W6 | `cancel [--save <folder>]` | D | only Confirmed → Cancelled (`InvalidTransition` otherwise); refund 100% at ≥ 7 days, 50% at 2–6, 0% at 0–1, negative = `InvalidEvent`; all items go back to stock | B-R3 350.00, B-R6 60.00, B-R2 0.00, B-R8 and the second B-R6 rejected (`InvalidTransition`); refund total 410.00; stock BIKE-01=1, SKI-02=1, TENT-01=2 |
+
+`invoice` (W4, Member B) and `return` (W5, Member C) are reserved names; until they are merged they print "not in this build yet".
+
+Expected `cancel` screen:
+
+```
+Cancellations:
+B-R3   cancelled  refund 100%     350.00
+B-R6   cancelled  refund  50%      60.00
+B-R2   cancelled  refund   0%       0.00
+B-R8   REJECTED   [InvalidTransition] B-R8: already cancelled
+B-R6   REJECTED   [InvalidTransition] B-R6: already cancelled
+Refund total: 410.00
+Stock now: BIKE-01=1, SKI-02=1, TENT-01=2
+```
+
+Member D's final files: `Commands.cs` (closed union + pure `Parse`), `CommandRunner.cs` (pattern match → workflow → screen), `Program.cs` (one outcome handler), `Money.cs`, `AppWorkflow.Quote`/`Book`, `Booking.ConfirmedBookings`, `Display.RenderQuote`, `CancelEvent`, `Cancellation` (`RefundPercent`, `Cancel`), `Cancellations.ApplyAll`, `CancellationParser`, `CancelWorkflow`, `Screens/CancelScreen`. Tests: `CommandTests.cs` (5), `CancelTests.cs` (14 cases), `EndToEndTests.cs` (3).
+
 ### Demo commands
 
 | Case | Command | Expected |
