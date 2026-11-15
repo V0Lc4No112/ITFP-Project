@@ -170,4 +170,105 @@ public class RegressionTests
             Assert.Equal(ErrorCode.InvalidRequest, fail.Error.Code);
         }
     }
+
+    // 7. Second review: returns and cancellations must respect the stock limit ------------------
+
+    private static BookingState BikeBooking(int quantity = 1, long total = 3000) =>
+        new BookingState.Confirmed(
+            new PricedRental(new RentalRequest("R1", "Anna", "BIKE-01", Category.Bike, 1500, quantity, 2, false), total),
+            "B-R1");
+
+    [Fact]
+    public void Return_StockAtLimit_IsRejected_NothingChanges_AndSavedFilesReload()
+    {
+        var stock = StockOf(Stock.MaxPerItem);
+        ImmutableArray<BookingState> bookings = [BikeBooking()];
+
+        var report = Returns.ApplyAll(bookings, stock, [new ReturnEvent("B-R1", 2, 0)]);
+
+        var fail = Assert.IsType<Result<ReturnResult>.Fail>(report.Lines[0].Result);
+        Assert.Equal(ErrorCode.InvalidEvent, fail.Error.Code);
+        Assert.IsType<BookingState.Confirmed>(report.Bookings[0]);
+        Assert.Equal(Option.Some(Stock.MaxPerItem), report.Stock.Available("BIKE-01"));
+        Assert.Equal(0, report.ExtraChargesCents);
+
+        string dir = TempDir();
+        Assert.IsType<Result<string>.Ok>(SaveFolder.SaveAll(dir, report.Bookings, report.Stock));
+        Assert.IsType<Result<Stock>.Ok>(StockParser.Load(Path.Combine(dir, "stock.csv")));
+        Assert.IsType<Result<ImmutableArray<BookingState>>.Ok>(BookingFile.Load(Path.Combine(dir, "bookings.csv")));
+    }
+
+    [Fact]
+    public void Cancel_StockAtLimit_IsRejected_AndNothingChanges()
+    {
+        var report = Cancellations.ApplyAll([BikeBooking()], StockOf(Stock.MaxPerItem), [new CancelEvent("B-R1", 10)]);
+
+        var fail = Assert.IsType<Result<CancelResult>.Fail>(report.Lines[0].Result);
+        Assert.Equal(ErrorCode.InvalidEvent, fail.Error.Code);
+        Assert.IsType<BookingState.Confirmed>(report.Bookings[0]);
+        Assert.Equal(Option.Some(Stock.MaxPerItem), report.Stock.Available("BIKE-01"));
+        Assert.Equal(0, report.RefundCents);
+    }
+
+    [Fact]
+    public void Return_DamagedItemsDoNotCountTowardsTheLimit()
+    {
+        // 2 items out, 1 damaged: only 1 goes back, so stock MaxPerItem - 1 is still fine.
+        var report = Returns.ApplyAll([BikeBooking(quantity: 2, total: 6000)], StockOf(Stock.MaxPerItem - 1), [new ReturnEvent("B-R1", 2, 1)]);
+
+        Assert.IsType<Result<ReturnResult>.Ok>(report.Lines[0].Result);
+        Assert.Equal(Option.Some(Stock.MaxPerItem), report.Stock.Available("BIKE-01"));
+    }
+
+    // 8. Second review: fee and refund inputs ----------------------------------------------------
+
+    [Theory]
+    [InlineData(Returns.MaxDaysUsed, true)]
+    [InlineData(Returns.MaxDaysUsed + 1, false)]
+    [InlineData(int.MaxValue, false)]
+    public void Return_DaysUsedLimit(int daysUsed, bool accepted)
+    {
+        var big = new BookingState.Confirmed(
+            new PricedRental(new RentalRequest("R1", "Anna", "BIKE-01", Category.Bike,
+                ValidatedRental.MaxDailyRateCents, ValidatedRental.MaxQuantity, 1, false), 1),
+            "B-R1");
+
+        var result = BookingTransitions.Return(big, new ReturnEvent("B-R1", daysUsed, 0));
+
+        if (accepted)
+            // largest possible late fee: 3,649 late days x 1,000,000 x 1,000 x 1.5, exact and positive
+            Assert.Equal(3649L * 1_000_000 * 1_000 * 3 / 2, Assert.IsType<Result<ReturnResult>.Ok>(result).Value.FeeCents);
+        else
+            Assert.Equal(ErrorCode.InvalidEvent, Assert.IsType<Result<ReturnResult>.Fail>(result).Error.Code);
+    }
+
+    [Fact]
+    public void BookingFile_TotalAboveFullPrice_IsRejected()
+    {
+        var parsed = BookingFile.Parse([
+            BookingFile.Header,
+            $"B-R1,R1,Anna,BIKE-01,Bike,1500,1,2,false,{long.MaxValue},Confirmed",
+        ]);
+
+        var invalid = Assert.IsType<Validation<ImmutableArray<BookingState>>.Invalid>(parsed);
+        Assert.Contains(invalid.Reasons, r => r.Contains("TotalCents must be <="));
+    }
+
+    [Fact]
+    public void Cancel_HandBuiltImpossibleTotal_IsInvalidRequest()
+    {
+        var result = Cancellation.Cancel(BikeBooking(total: long.MaxValue), new CancelEvent("B-R1", 10));
+
+        Assert.Equal(ErrorCode.InvalidRequest, Assert.IsType<Result<CancelResult>.Fail>(result).Error.Code);
+    }
+
+    [Theory]
+    [InlineData(35000, 100, 35000)]
+    [InlineData(12000, 50, 6000)]
+    [InlineData(12345, 50, 6172)]
+    [InlineData(12000, 0, 0)]
+    [InlineData(long.MaxValue, 100, long.MaxValue)]
+    [InlineData(long.MaxValue, 50, long.MaxValue / 2)]
+    public void Refund_IsExactAndCannotOverflow(long total, int percent, long expected) =>
+        Assert.Equal(expected, Cancellation.Refund(total, percent));
 }

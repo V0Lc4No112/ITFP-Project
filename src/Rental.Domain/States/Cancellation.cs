@@ -28,6 +28,13 @@ public static class Cancellation
         };
 
     /// <summary>
+    /// total × percent / 100 without the intermediate product: (total / 100) × percent plus the
+    /// remainder part. Same result for every total >= 0, and it cannot overflow for percent <= 100.
+    /// </summary>
+    public static long Refund(long totalCents, int percent) =>
+        totalCents / 100 * percent + totalCents % 100 * percent / 100;
+
+    /// <summary>
     /// Only a <see cref="BookingState.Confirmed"/> booking can be cancelled. A returned or an already
     /// cancelled booking is an invalid sequence and is rejected, not ignored.
     /// </summary>
@@ -36,11 +43,12 @@ public static class Cancellation
         {
             BookingState.Confirmed confirmed =>
                 BookingTransitions.SameBooking(confirmed.BookingId, ev.BookingId)
+                    .Bind(_ => BookingTransitions.ValidQuote(confirmed.Quote))
                     .Bind(_ => RefundPercent(confirmed.BookingId, ev.DaysBeforeStart))
                     .Map(percent => new CancelResult(
                         new BookingState.Cancelled(confirmed.Quote, confirmed.BookingId),
                         percent,
-                        confirmed.Quote.TotalCents * percent / 100)),
+                        Refund(confirmed.Quote.TotalCents, percent))),
             BookingState.Returned returned => Result.Fail<CancelResult>(new Error(
                 ErrorCode.InvalidTransition,
                 $"{returned.BookingId}: already returned, cannot cancel")),

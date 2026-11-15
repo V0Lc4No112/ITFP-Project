@@ -69,6 +69,19 @@ public static class BookingTransitions
             _ => throw new InvalidOperationException("Unexpected validation result"),
         };
 
+    /// <summary>
+    /// A stored quote must satisfy the request rules and 0 <= TotalCents <= DailyRateCents × Quantity × Days
+    /// (pricing policies only give discounts). Used by Return and Cancel, so hand-built or imported states
+    /// cannot carry an impossible price into a fee or a refund.
+    /// </summary>
+    internal static Result<PricedRental> ValidQuote(PricedRental quote) =>
+        Valid(quote.Request)
+            .Bind(request => quote.TotalCents >= 0 && quote.TotalCents <= request.DailyRateCents * request.Quantity * request.Days
+                ? Result.Ok(quote)
+                : Result.Fail<PricedRental>(new Error(
+                    ErrorCode.InvalidRequest,
+                    $"{request.Id}: total {quote.TotalCents} must be between 0 and {request.DailyRateCents * request.Quantity * request.Days}")));
+
     /// <summary>An event must name the booking it is applied to (shared by Return and Cancel).</summary>
     internal static Result<string> SameBooking(string bookingId, string eventBookingId) =>
         string.Equals(bookingId, eventBookingId, StringComparison.Ordinal)
@@ -96,6 +109,7 @@ public static class BookingTransitions
         state switch
         {
             BookingState.Confirmed confirmed => SameBooking(confirmed.BookingId, ev.BookingId)
+                .Bind(_ => ValidQuote(confirmed.Quote))
                 .Bind(_ => CheckEvent(confirmed, ev))
                 .Map(_ => new ReturnResult(
                     new BookingState.Returned(confirmed.Quote, confirmed.BookingId),
@@ -118,9 +132,10 @@ public static class BookingTransitions
         };
 
     private static Result<ReturnEvent> CheckEvent(BookingState.Confirmed confirmed, ReturnEvent ev) =>
-        ev.DaysUsed >= 1 && ev.Damaged >= 0 && ev.Damaged <= confirmed.Quote.Request.Quantity
+        ev.DaysUsed >= 1 && ev.DaysUsed <= Pipeline.Returns.MaxDaysUsed
+            && ev.Damaged >= 0 && ev.Damaged <= confirmed.Quote.Request.Quantity
             ? Result.Ok(ev)
             : Result.Fail<ReturnEvent>(new Error(
                 ErrorCode.InvalidEvent,
-                $"{confirmed.BookingId}: days used must be >= 1 and damaged between 0 and {confirmed.Quote.Request.Quantity} (was {ev.DaysUsed} days, {ev.Damaged} damaged)"));
+                $"{confirmed.BookingId}: days used must be between 1 and {Pipeline.Returns.MaxDaysUsed} and damaged between 0 and {confirmed.Quote.Request.Quantity} (was {ev.DaysUsed} days, {ev.Damaged} damaged)"));
 }

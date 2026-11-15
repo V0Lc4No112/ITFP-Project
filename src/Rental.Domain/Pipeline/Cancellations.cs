@@ -59,10 +59,8 @@ public static class Cancellations
     private static Stock Release(Stock stock, RentalRequest request) =>
         stock.Release(request.ItemCode, request.Quantity);
 
-    // The items must go back somewhere: a stock file without the item rejects the cancellation.
+    // The items must go back somewhere and the stock must stay within its limit:
+    // otherwise the cancellation is rejected and neither the booking nor the stock changes.
     private static Result<int> EnsureStockRecord(Stock stock, RentalRequest request) =>
-        stock.Available(request.ItemCode)
-            .ToResult(() => new Error(
-                ErrorCode.UnknownItem,
-                $"{request.ItemCode}: not in the stock list, cannot put the items back"));
+        stock.CanAdd(request.ItemCode, request.Quantity);
 }

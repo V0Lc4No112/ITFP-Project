@@ -18,6 +18,9 @@ public static class Returns
 {
     public const long DamageFeeCents = 2000;
 
+    /// <summary>Business limit for one return: at most 3,650 days (10 years) of use.</summary>
+    public const int MaxDaysUsed = 3650;
+
     /// <summary>Late days cost 1.5 × the daily rate per item; every damaged item costs 20.00.</summary>
     public static long Fee(RentalRequest request, int lateDays, int damaged) =>
         (lateDays, damaged) switch
@@ -29,7 +32,9 @@ public static class Returns
         };
 
     private static long LateFee(RentalRequest request, int lateDays) =>
-        lateDays * request.DailyRateCents * request.Quantity * 150 / 100;
+        // With the limits (rate <= 1,000,000, quantity <= 1,000, days used <= 3,650) the largest
+        // product is 5.5e17, below long.MaxValue; checked turns any bypass into an exception, never a wrong fee.
+        checked(lateDays * request.DailyRateCents * request.Quantity * 150 / 100);
 
     /// <summary>
     /// W5 (Member C): applies every return in file order. Each event is Find (Option → UnknownBooking)
@@ -52,10 +57,9 @@ public static class Returns
             .ToResult(() => new Error(ErrorCode.UnknownBooking, $"{ev.BookingId}: no such booking"))
             .Bind(booking => BookingTransitions.Return(booking, ev)
                 .Map(returned => (Old: booking, Returned: returned)))
-            .Bind(found => report.Stock.Available(found.Returned.Booking.Quote.Request.ItemCode)
-                .ToResult(() => new Error(
-                    ErrorCode.UnknownItem,
-                    $"{found.Returned.Booking.Quote.Request.ItemCode}: not in the stock list, cannot put the items back"))
+            .Bind(found => report.Stock.CanAdd(
+                    found.Returned.Booking.Quote.Request.ItemCode,
+                    found.Returned.Booking.Quote.Request.Quantity - found.Returned.Damaged)
                 .Map(_ => found));
 
         return result switch
