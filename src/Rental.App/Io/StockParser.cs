@@ -1,6 +1,7 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.Globalization;
 using Rental.Domain.States;
 using Rental.Domain.Results;
 
@@ -26,7 +27,6 @@ public static class StockParser
         }
 
         var errors = ImmutableArray.CreateBuilder<string>();
-
         var rows = new List<(string ItemCode, int Available)>();
 
         for (int i = 1; i < lines.Count; i++)
@@ -43,7 +43,11 @@ public static class StockParser
 
             string itemCode = fields[0].Trim();
 
-            if (!int.TryParse(fields[1].Trim(), out int available))
+            if (!int.TryParse(
+                fields[1].Trim(),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out int available))
             {
                 errors.Add(
                     $"Row {rowNumber}: Available must be an integer (was {fields[1]})");
@@ -55,22 +59,31 @@ public static class StockParser
 
         if (errors.Count > 0)
         {
-            return new Validation<Stock>.Invalid(
-                errors.ToImmutable());
+            return new Validation<Stock>.Invalid(errors.ToImmutable());
         }
 
         return Stock.Create(rows);
     }
-    
-    public static Result<Stock> Load(string path) =>
-    DataFile.ReadLines("stock", path)
-        .Bind(lines => Parse(lines).ToResult(reasons =>
-            new Error(
-                ErrorCode.MalformedFile,
-                $"Stock file '{path}' is malformed; no stock was loaded",
-                reasons
-            )
-        ));
 
-    
+    public static Result<Stock> Load(string path) =>
+        DataFile.ReadLines("stock", path)
+            .Bind(lines => Parse(lines).ToResult(reasons =>
+                new Error(
+                    ErrorCode.MalformedFile,
+                    $"Stock file '{path}' is malformed; no stock was loaded",
+                    reasons)));
+
+    public static ImmutableArray<string> Lines(Stock stock)
+    {
+        var lines = ImmutableArray.CreateBuilder<string>();
+        lines.Add(Header);
+
+        foreach (var item in stock.Items)
+        {
+            lines.Add(
+                $"{item.Key},{item.Value.ToString(CultureInfo.InvariantCulture)}");
+        }
+
+        return lines.ToImmutable();
+    }
 }
