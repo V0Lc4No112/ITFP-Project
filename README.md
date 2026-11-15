@@ -19,7 +19,15 @@ Counter staff at a small rental shop who need a quick, repeatable quote for a ba
 
 ## Requirements
 
-- .NET SDK 10 (pinned in `global.json`, rolls forward to the latest 10.0.x feature band). Checked with `dotnet --version` = `10.0.100`.
+- .NET SDK 10 (pinned in `global.json`, rolls forward to the latest 10.0.x feature band). Final run checked with `dotnet --version` = `[D: paste your dotnet --version]`.
+- Declared platform: **Windows x64**. The service fee calls the committed native library `native/rental_native.dll`; on Linux/macOS build `librental_native.so` from the same C source first (see [Native library](#native-library-tasks-7-to-9-member-a)), otherwise `book` fails with `NativeUnavailable`.
+
+## Submission
+
+- Repository: https://github.com/V0Lc4No112/ITFP-Project
+- Branch: `main`
+- Tag: `final-submission` (the Moodle ZIP is built from this tag with `git archive --format=zip -o ITFP-Final.zip final-submission`)
+- Final commit: the commit the `final-submission` tag points to (`git rev-parse final-submission`); its id is written in the group report. A commit cannot contain its own id, so this README names the tag.
 
 ## Build, run, test
 
@@ -52,6 +60,10 @@ Since the final project the first argument names the workflow. The A5-A8 form ab
 dotnet run --project src/Rental.App -- quote   data/requests.csv weekly
 dotnet run --project src/Rental.App -- book    data/requests.csv standard data/stock.csv --save out
 dotnet run --project src/Rental.App -- restock data/stock.csv data/deliveries.csv
+dotnet run --project src/Rental.App -- invoice data/bookings.csv Anna
+dotnet run --project src/Rental.App -- invoice data/bookings.csv Zoe
+dotnet run --project src/Rental.App -- return  data/bookings.csv data/returns.csv data/stock-booked.csv
+dotnet run --project src/Rental.App -- return  data/bookings.csv data/returns-malformed.csv data/stock-booked.csv
 dotnet run --project src/Rental.App -- cancel  data/bookings.csv data/cancellations.csv data/stock-booked.csv
 dotnet run --project src/Rental.App -- cancel  data/bookings.csv data/cancellations-malformed.csv data/stock-booked.csv
 ```
@@ -63,9 +75,34 @@ dotnet run --project src/Rental.App -- cancel  data/bookings.csv data/cancellati
 | W1 | `quote` | D | eligibility (max 14 days) + pricing policy (`Func`) | weekly: R3 262.50, R1 150.00, R2 120.00, R6 90.00, R5 50.00; grand total 672.50 |
 | W2 | `book [report.csv] [--save <folder>]` | D | confirm each quote against stock | 740.00 confirmed, R5 rejected, total due 745.00; `--save out` writes `out/bookings.csv` (B-R3, B-R1, B-R2, B-R6, = first 4 rows of `data/bookings.csv`) and `out/stock.csv` (= `data/stock-booked.csv`) |
 | W3 | `restock [--save <folder>]` | A | added ≥ 1 (`InvalidEvent`), item must exist (`UnknownItem`) | 2 accepted, 2 rejected (BIKE-01 +0, KAYAK-01) |
+| W4 | `invoice <bookings.csv> <customer>` | B | customer lookup (`Option` → `UnknownCustomer`); only Confirmed/Returned billed (`IsBillable()`); members 10% off through a discount `Func` | Anna: B-R1 150.00 + B-R7 80.00 = 230.00, discount 23.00, total 207.00; `ben`: 120.00 (cancelled B-R8 skipped); Zoe → `Rejected [UnknownCustomer]`, exit 1 |
+| W5 | `return <bookings.csv> <returns.csv> <stock.csv> [--save <folder>]` | C | only Confirmed → Returned (`InvalidTransition` for a second return or a cancelled booking); late fee = late days × rate × qty × 1.5; 20.00 per damaged item; damaged items are not put back | B-R1 0.00, B-R2 140.00; second B-R1, B-R8 (`InvalidTransition`) and B-R99 (`UnknownBooking`) rejected; extra charges 140.00; stock BIKE-01=2, SKI-02=0, TENT-01=1 |
 | W6 | `cancel [--save <folder>]` | D | only Confirmed → Cancelled (`InvalidTransition` otherwise); refund 100% at ≥ 7 days, 50% at 2–6, 0% at 0–1, negative = `InvalidEvent`; all items go back to stock | B-R3 350.00, B-R6 60.00, B-R2 0.00, B-R8 and the second B-R6 rejected (`InvalidTransition`); refund total 410.00; stock BIKE-01=1, SKI-02=1, TENT-01=2 |
 
-`invoice` (W4, Member B) and `return` (W5, Member C) are reserved names; until they are merged they print "not in this build yet".
+
+Expected `invoice` screen (Anna):
+
+```
+Invoice: Anna (member)
+B-R1   BIKE-01  2 x  5 days     150.00
+B-R7   SKI-02   1 x  2 days      80.00
+Subtotal:            230.00
+Member discount:     -23.00
+Total:               207.00
+```
+
+Expected `return` screen:
+
+```
+Returns:
+B-R1   returned   late 0 day(s), damaged 0, extra     0.00
+B-R2   returned   late 2 day(s), damaged 1, extra   140.00
+B-R1   REJECTED   [InvalidTransition] B-R1: already returned
+B-R8   REJECTED   [InvalidTransition] B-R8: was cancelled, nothing to return
+B-R99  REJECTED   [UnknownBooking] B-R99: no such booking
+Extra charges: 140.00
+Stock now: BIKE-01=2, SKI-02=0, TENT-01=1
+```
 
 Expected `cancel` screen:
 
@@ -79,6 +116,8 @@ B-R6   REJECTED   [InvalidTransition] B-R6: already cancelled
 Refund total: 410.00
 Stock now: BIKE-01=1, SKI-02=1, TENT-01=2
 ```
+
+Member B's final files: `InvoiceExtensions.IsBillable`, `Invoicing` (`For`, `DiscountFor`, `MemberDiscount`), `InvoiceWorkflow`, `Screens/InvoiceScreen`; tests `InvoiceTests.cs` (10). Member C's final files: `ReturnEvent`, `BookingTransitions.Return`, `Returns` (`Fee`, `ApplyAll`), `ReturnParser`, `ReturnWorkflow`, `Screens/ReturnScreen`; tests `ReturnTests.cs` (13 cases). Member A's: `BookingFile`, `StockParser.Lines`, `SaveFolder`, `Delivery`, `Restocking`, `DeliveryParser`, `RestockWorkflow`, `RestockScreen`.
 
 Member D's final files: `Commands.cs` (closed union + pure `Parse`), `CommandRunner.cs` (pattern match → workflow → screen), `Program.cs` (one outcome handler), `Money.cs`, `AppWorkflow.Quote`/`Book`, `Booking.ConfirmedBookings`, `Display.RenderQuote`, `CancelEvent`, `Cancellation` (`RefundPercent`, `Cancel`), `Cancellations.ApplyAll`, `CancellationParser`, `CancelWorkflow`, `Screens/CancelScreen`. Tests: `CommandTests.cs` (5), `CancelTests.cs` (14 cases), `EndToEndTests.cs` (3).
 

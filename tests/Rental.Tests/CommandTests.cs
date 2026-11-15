@@ -23,6 +23,10 @@ public class CommandTests
         Assert.Equal(
             new Command.Cancel("b.csv", "c.csv", "s.csv", Option.None<string>()),
             Parsed("CANCEL", "b.csv", "c.csv", "s.csv"));
+        Assert.Equal(new Command.Invoice("b.csv", "Anna"), Parsed("invoice", "b.csv", "Anna"));
+        Assert.Equal(
+            new Command.Return("b.csv", "r.csv", "s.csv", Option.Some("out")),
+            Parsed("return", "b.csv", "r.csv", "s.csv", "--save", "out"));
     }
 
     [Fact]
