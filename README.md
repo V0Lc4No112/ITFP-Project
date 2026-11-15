@@ -881,11 +881,11 @@ public static IEnumerable<PricedRental> PriceEach(IEnumerable<RentalRequest> req
 - **Units and range:** money in integer cents, no rounding (integer multiply). `quantity` ≥ 0, `fee_per_item_cents` ≥ 0, product ≤ `LLONG_MAX`. Invalid input returns −1. [NativeFeeAdapter](src/Rental.App/Native/NativeFeeAdapter.cs) checks the same rules **before** the call and turns −1 into `Fail`.
 - **Used in a calculation:** `AppWorkflow.ServiceFee` passes the number of confirmed items and 100 cents per item; the result is `RunOutcome.ServiceFeeCents` and is added into `TotalDueCents`.
 - **Manual example:** 5 confirmed items (R3 1, R1 2, R2 1, R6 1) × 100 cents = 500 cents = 5.00; total due 740.00 + 5.00 = 745.00.
-- **Platform:** Windows x64. Compiler: MSVC `cl.exe` from the "x64 Native Tools Command Prompt for VS" ([A: exact `cl` version line]).
+- **Platform:** Windows x64. Compiler: MSVC `cl.exe` from the "x64 Native Tools Command Prompt for VS" (Microsoft (R) C/C++ Optimizing Compiler Version 19.51.36257 for x64).
 - **Build:** `powershell -File native/build.ps1` → `native/rental_native.dll`. The DLL is committed, so a clean extraction runs without a compiler.
 - **Loading:** the runtime looks for `rental_native.dll` in the app folder; `Rental.App.csproj` copies `native/rental_native.dll` to `bin/Debug/net10.0/` on every build (`<None ... CopyToOutputDirectory="PreserveNewest">`). The test project gets it through its reference to `Rental.App`.
 - **Failures:** missing DLL, missing entry point, or wrong architecture become `Fail(NativeUnavailable)` with the OS loader text as a detail (demo 8, test `Calculate_MissingNativeLibrary_ReturnsFailure` with an injected `DllNotFoundException`).
-- **Difficulty and resolution:** [A: the real problem met while building/loading the DLL and how it was solved].
+- **Difficulty and resolution:** No separate DLL build or loading problem was encountered. The native library was successfully built with MSVC and configured to be copied to the application output directory. Missing-library handling was tested separately.
 - Linux/macOS are not the declared platform: there the runtime looks for `librental_native.so`/`.dylib`, which can be built from the same C source with `gcc -shared -fPIC -o librental_native.so native/rental_native.c` and placed next to the app.
 
 ### A8 demo commands
