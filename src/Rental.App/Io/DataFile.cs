@@ -30,6 +30,12 @@ public static class DataFile
         string path,
         Func<TextReader> open)
     {
+        if (string.IsNullOrWhiteSpace(path))
+            return Result.Fail<IReadOnlyList<string>>(
+                new Error(
+                    ErrorCode.FileMissing,
+                    $"Cannot load {role} file: no path was given"));
+
         try
         {
             IReadOnlyList<string> lines =
@@ -52,7 +58,7 @@ public static class DataFile
                     $"Cannot load {role} file '{path}': folder not found"));
         }
         catch (Exception ex) when (
-            ex is IOException or UnauthorizedAccessException)
+            ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
             return Result.Fail<IReadOnlyList<string>>(
                 new Error(
@@ -73,6 +79,12 @@ public static class DataFile
         IReadOnlyList<string> lines,
         Func<TextWriter> open)
     {
+        if (string.IsNullOrWhiteSpace(path))
+            return Result.Fail<int>(
+                new Error(
+                    ErrorCode.FileUnwritable,
+                    $"Cannot write {role} file: no path was given"));
+
         try
         {
             using var writer = open();
@@ -92,7 +104,7 @@ public static class DataFile
                     $"Cannot write {role} file '{path}': folder not found"));
         }
         catch (Exception ex) when (
-            ex is IOException or UnauthorizedAccessException)
+            ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
         {
             return Result.Fail<int>(
                 new Error(

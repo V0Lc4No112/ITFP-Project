@@ -121,6 +121,27 @@ Member B's final files: `InvoiceExtensions.IsBillable`, `Invoicing` (`For`, `Dis
 
 Member D's final files: `Commands.cs` (closed union + pure `Parse`), `CommandRunner.cs` (pattern match → workflow → screen), `Program.cs` (one outcome handler), `Money.cs`, `AppWorkflow.Quote`/`Book`, `Booking.ConfirmedBookings`, `Display.RenderQuote`, `CancelEvent`, `Cancellation` (`RefundPercent`, `Cancel`), `Cancellations.ApplyAll`, `CancellationParser`, `CancelWorkflow`, `Screens/CancelScreen`. Tests: `CommandTests.cs` (5), `CancelTests.cs` (14 cases), `EndToEndTests.cs` (3).
 
+### Robustness rules (after the final review)
+
+A review of the first `final-submission` build (dd7dd88) found six cases the tests did not cover. Each one is now fixed and has a regression test in `tests/Rental.Tests/RegressionTests.cs` (20 cases):
+
+| # | Problem found | Rule now | Where | Test |
+|---|---|---|---|---|
+| 1 | Two requests with the same `Id` were booked as two `B-R1` rows, and the saved `bookings.csv` could not be loaded again | A repeated request `Id` is a row error: `Row 3: Id R1 is listed twice` (`InvalidRequest`, nothing is booked) | `RequestParser.Parse` | `RequestParser_DuplicateId_IsRejected` |
+| 2 | `SaveAll` wrote `bookings.csv`, then failed on `stock.csv`, leaving the two files out of step | Both files are written as `*.tmp` first, the old `bookings.csv` is kept as `*.bak`, then both are moved into place; if the stock file cannot be replaced the old `bookings.csv` is restored. The result is both files or neither | `SaveFolder.SaveAll` | `SaveAll_StockTempWriteFails_OldBookingsUnchanged`, `SaveAll_StockReplaceFails_OldBookingsRestored` |
+| 3 | An empty path threw `ArgumentException` | A blank path is `FileMissing` (read) or `FileUnwritable` (write); any other bad path is a `Result.Fail`, never an exception | `DataFile.ReadLines`, `DataFile.WriteLines` | `DataFile_EmptyPath_FailsInsteadOfThrowing`, `QuoteCommand_EmptyPath_FailsWithFileMissing` |
+| 4 | A hand-built `Quoted` state with `Quantity = -2` added stock; `Return`/`Cancel` accepted an event for another booking | `Confirm` re-checks the `ValidatedRental` rules (`InvalidRequest`); `Return` and `Cancel` reject an event whose `BookingId` differs (`InvalidEvent`) | `BookingTransitions.Confirm`, `BookingTransitions.SameBooking`, `Cancellation.Cancel` | `Confirm_HandBuiltNegativeQuantity_FailsAndStockUnchanged`, `ReturnAndCancel_EventForAnotherBooking_IsInvalidEvent` |
+| 5 | Stock at `int.MaxValue` + 1 became negative; huge rates overflowed the price; `Money.Format(-2)` showed `0.02` | Business limits: rate ≤ 1,000,000 cents (10,000.00/day), quantity ≤ 1,000, days ≤ 365 (max price 3.65e12 cents, far below `long.MaxValue`); stock ≤ 1,000,000 per item, a delivery above it is `InvalidEvent`; `Reserve`/`Release` use `checked`; negative money keeps its sign | `ValidatedRental.Create`, `Stock`, `Restocking.ApplyOne`, `Money.Format` | `ValidatedRental_BusinessLimits`, `Restock_AboveMaxPerItem_IsInvalidEvent`, `MoneyFormat_KeepsTheSign` |
+| 6 | The invoice took `IsMember` from the customer's first row, so row order changed the total | Membership belongs to the customer: all of a customer's bookings must agree, otherwise `Rejected [InvalidRequest]` with each booking's flag as a detail | `Invoicing.For` (`SameMembership`) | `Invoice_ConflictingMembership_FailsInEitherOrder` |
+
+The sample data is inside every limit, so all demo screens above are unchanged.
+
+### Limitations
+
+- Fees from `return` are shown and summed, but not stored in `bookings.csv` (the file has no fee column); `invoice` bills rental totals only.
+- The coordinated save covers a failed write or a failed replace of `stock.csv`. A power cut between the two final moves can still leave the new `bookings.csv` with the old `stock.csv`; a real database transaction would be needed for that.
+- The native service fee needs `native/rental_native.dll` (Windows x64, committed) or a `librental_native.so` built from the same C source on Linux/macOS.
+
 ### Demo commands
 
 | Case | Command | Expected |
@@ -230,7 +251,7 @@ Worked example (Standard): R3 35000, R1 15000, R2 12000, R6 12000, R5 5000. R2 a
 
 | Rule | Owner | Definition |
 |---|---|---|
-| Validation | A | Every field present; `DailyRateCents > 0`; `Quantity >= 1`; `Days >= 1`; `Category` is a known value. Invalid rows get a clear error and are never silently fixed |
+| Validation | A | Every field present; `0 < DailyRateCents <= 1,000,000`; `1 <= Quantity <= 1,000`; `1 <= Days <= 365`; `Category` is a known value; request `Id` unique in the file. Invalid rows get a clear error and are never silently fixed |
 | Missing vs empty | A | `null` input is an error (`"Input is missing"`). Header only is a valid empty dataset |
 | Errors stop the run | A + D | If `Errors` is not empty, `Program` prints them and does not run the pipeline |
 | Eligibility (Stage 1) | B | `Days <= maxDays` (14). **14 is accepted, 15 is excluded.** `Customer` is trimmed |

@@ -35,7 +35,8 @@ public static class Cancellation
         state switch
         {
             BookingState.Confirmed confirmed =>
-                RefundPercent(confirmed.BookingId, ev.DaysBeforeStart)
+                BookingTransitions.SameBooking(confirmed.BookingId, ev.BookingId)
+                    .Bind(_ => RefundPercent(confirmed.BookingId, ev.DaysBeforeStart))
                     .Map(percent => new CancelResult(
                         new BookingState.Cancelled(confirmed.Quote, confirmed.BookingId),
                         percent,

@@ -7,6 +7,9 @@ public sealed class Stock
 {
     private readonly ImmutableDictionary<string, int> _available;
 
+    /// <summary>Business limit per item; keeps every stock change far from int overflow.</summary>
+    public const int MaxPerItem = 1_000_000;
+
     private Stock(ImmutableDictionary<string, int> available) => _available = available;
 
     public static Validation<Stock> Create(IReadOnlyList<(string ItemCode, int Available)> rows) =>
@@ -23,10 +26,10 @@ public sealed class Stock
             : Option.None<int>();
 
     internal Stock Reserve(string itemCode, int quantity) =>
-        new(_available.SetItem(itemCode, _available[itemCode] - quantity));
+        new(_available.SetItem(itemCode, checked(_available[itemCode] - quantity)));
 
     internal Stock Release(string itemCode, int quantity) =>
-        new(_available.SetItem(itemCode, _available[itemCode] + quantity));
+        new(_available.SetItem(itemCode, checked(_available[itemCode] + quantity)));
 
     public IEnumerable<KeyValuePair<string, int>> Items =>
         _available.OrderBy(item => item.Key, StringComparer.Ordinal);
@@ -43,5 +46,8 @@ public sealed class Stock
             .Concat(rows
                 .Where(r => r.Available < 0)
                 .Select(r => $"Available for {r.ItemCode} must be >= 0 (was {r.Available})"))
+            .Concat(rows
+                .Where(r => r.Available > MaxPerItem)
+                .Select(r => $"Available for {r.ItemCode} must be <= {MaxPerItem} (was {r.Available})"))
             .ToImmutableArray();
 }
