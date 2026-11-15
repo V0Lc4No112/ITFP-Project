@@ -5,15 +5,36 @@ namespace Rental.Domain.States;
 
 public static class BookingTransitions
 {
-    public static Result<Reservation> Confirm(BookingState state, Stock stock) =>
+    public static Result<Reservation> Confirm(
+        BookingState state,
+        Stock stock) =>
         state switch
         {
-            BookingState.Quoted quoted => ConfirmQuoted(quoted, stock),
-            BookingState.Confirmed confirmed => Result.Ok(new Reservation(confirmed, stock)),
-            _ => throw new InvalidOperationException($"Unknown booking state: {state.GetType().Name}"),
+            BookingState.Quoted quoted =>
+                ConfirmQuoted(quoted, stock),
+
+            BookingState.Confirmed confirmed =>
+                Result.Ok(new Reservation(confirmed, stock)),
+
+            BookingState.Returned returned =>
+                Result.Fail<Reservation>(
+                    new Error(
+                        ErrorCode.InvalidTransition,
+                        $"{returned.BookingId}: cannot confirm a returned booking")),
+
+            BookingState.Cancelled cancelled =>
+                Result.Fail<Reservation>(
+                    new Error(
+                        ErrorCode.InvalidTransition,
+                        $"{cancelled.BookingId}: cannot confirm a cancelled booking")),
+
+            _ => throw new InvalidOperationException(
+                $"Unknown booking state: {state.GetType().Name}"),
         };
 
-    private static Result<Reservation> ConfirmQuoted(BookingState.Quoted quoted, Stock stock)
+    private static Result<Reservation> ConfirmQuoted(
+        BookingState.Quoted quoted,
+        Stock stock)
     {
         var request = quoted.Quote.Request;
 
@@ -23,14 +44,21 @@ public static class BookingTransitions
                 $"{request.Id}: no stock record for {request.ItemCode}"))
             .Bind(available => EnsureEnough(request, available))
             .Map(_ => new Reservation(
-                new BookingState.Confirmed(quoted.Quote, $"B-{request.Id}"),
-                stock.Reserve(request.ItemCode, request.Quantity)));
+                new BookingState.Confirmed(
+                    quoted.Quote,
+                    $"B-{request.Id}"),
+                stock.Reserve(
+                    request.ItemCode,
+                    request.Quantity)));
     }
 
-    private static Result<int> EnsureEnough(RentalRequest request, int available) =>
+    private static Result<int> EnsureEnough(
+        RentalRequest request,
+        int available) =>
         available >= request.Quantity
             ? Result.Ok(available)
-            : Result.Fail<int>(new Error(
-                ErrorCode.NotEnoughStock,
-                $"{request.Id}: not enough {request.ItemCode} (requested {request.Quantity}, available {available})"));
+            : Result.Fail<int>(
+                new Error(
+                    ErrorCode.NotEnoughStock,
+                    $"{request.Id}: not enough {request.ItemCode} (requested {request.Quantity}, available {available})"));
 }
